@@ -335,14 +335,20 @@
         // An outgoing call reserves the only conversation group, so the framework refuses
         // another start request (including a join).
         let busy = newCallID("busy")
-        try await app.client.request(.start(OutgoingCall(id: busy, parties: [caller])))
+        let action = Action.start(OutgoingCall(id: busy, parties: [caller]))
+        let request = Task { try await app.client.request(action) }
         try await app.expect([.startRequested(busy)])
+        await app.client.confirmPlaced(busy)
+        try await request.value
+        try await app.expect([.performed(action, .dialing), .audioActivated])
         await #expect(throws: ActionError.self) {
           try await app.client.request(.join(id))
         }
         try await app.expect([.joinFailed(id, .policy, failure), .previewStarted(id, .policy)])
-        await app.client.confirmNotPlaced(busy)
-        try await app.expect([.ended(busy, .failed(.notPlaced))])
+        _ = try await app.client.end(busy)
+        try await app.expect([
+          .performed(.end(busy), .ended(.localEnded)), .ended(busy, .localEnded), .audioDeactivated,
+        ])
       } else {
         try await app.client.request(.join(id))
         try await app.expect([.joinRequested(id)])
@@ -425,14 +431,15 @@
       defer { app.stop() }
       let id = newCallID("outgoing")
       let bob = try Party(handle: Handle(kind: .phoneNumber, value: "+442071838750"))
-      try await app.client.request(.start(OutgoingCall(id: id, parties: [bob])))
+      let action = Action.start(OutgoingCall(id: id, parties: [bob]))
+      let request = Task { try await app.client.request(action) }
       try await app.expect([.startRequested(id)])
-      #expect(try await app.system.calls().map(\.outgoing) == [true])
+      #expect(try await app.system.calls().isEmpty)
 
       await app.client.confirmPlaced(id)
-      try await app.expect([
-        .performed(.start(OutgoingCall(id: id, parties: [bob])), .dialing), .audioActivated,
-      ])
+      try await request.value
+      try await app.expect([.performed(action, .dialing), .audioActivated])
+      #expect(try await app.system.calls().map(\.outgoing) == [true])
       await app.client.receive(.connected, for: id, eventID: EventID(rawValue: "connected-\(id)"))
       try await app.until("the call to connect") { app.call(id)?.status == .connected }
       try await app.until("the system to see the call connected") {
@@ -457,19 +464,23 @@
       defer { app.stop() }
       let id = newCallID("not-placed")
       let bob = try Party(handle: Handle(kind: .phoneNumber, value: "+442071838750"))
-      try await app.client.request(.start(OutgoingCall(id: id, parties: [bob])))
+      let request = Task {
+        try await app.client.request(.start(OutgoingCall(id: id, parties: [bob])))
+      }
       try await app.expect([.startRequested(id)])
 
-      // The app's servers refuse the call, so the app fails it rather than waiting for the
-      // placement deadline, and the system's start fails with it.
+      // The app's servers refuse placement before the SDK submits the native Start.
       await app.client.confirmNotPlaced(id)
+      await #expect(throws: ActionError.notAllowed(.ended(.failed(.notPlaced)))) {
+        try await request.value
+      }
       try await app.expect([.ended(id, .failed(.notPlaced))])
       try await app.until("the system to end the call") { try await app.system.calls().isEmpty }
       let uuid = deviceUUID(for: id).uuidString
       let starts = try await app.system.journal().filter {
         $0.event == "action.settled" && $0.kind == "start" && $0.callUUID == uuid
       }
-      #expect(starts.map(\.fulfilled) == [false])
+      #expect(starts.isEmpty)
       #expect(await app.media.records.isEmpty)
       app.expectNoMoreEvents()
     }

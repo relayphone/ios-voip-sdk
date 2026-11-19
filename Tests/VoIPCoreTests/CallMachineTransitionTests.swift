@@ -176,42 +176,59 @@ let transitionRows: [TransitionRow] = [
   .init(.previewing, .event(.frameworkReset), .previewing(.policy), []),
   .init(.previewing, .event(.notPlaced), .previewing(.policy), []),
 
-  // MARK: Requesting a start
+  // MARK: Placing an app Start
   .init(
-    .requestingStart, .event(.performed(a2, startAction)), .placing(held(a2, startAction)),
-    [.startRequested]),
-  .init(.requestingStart, .event(.performed(a2, join)), .requesting(startAction), [.fail(a2)]),
+    .placingAppStart, .event(.performed(a2, startAction)), .placingStart(outgoing), [.fail(a2)]),
+  .init(.placingAppStart, .event(.performed(a2, join)), .placingStart(outgoing), [.fail(a2)]),
   .init(
-    .requestingStart,
+    .placingAppStart,
     .event(.startFailed(attempt, SystemFailure(platform: .ios, operation: .start))),
     .ended(.failed(.systemFailed(SystemFailure(platform: .ios, operation: .start)))),
     [
+      .settleStart(.refused(nil)),
       .disarm(.placement),
       .ended(.failed(.systemFailed(SystemFailure(platform: .ios, operation: .start)))),
     ]),
-  .init(.requestingStart, .event(.requestFailed(end)), .requesting(startAction), []),
+  .init(.placingAppStart, .event(.requestFailed(end)), .placingStart(outgoing), []),
   .init(
-    .requestingStart, .expiry(.placement), .ended(.failed(.notPlaced)),
-    [.reportEnded(.failed(.notPlaced)), .ended(.failed(.notPlaced))]),
+    .placingAppStart, .expiry(.placement), .ended(.failed(.notPlaced)),
+    [.settleStart(.notAllowed(.ended(.failed(.notPlaced)))), .ended(.failed(.notPlaced))]),
   .init(
-    .requestingStart, .event(.localEnd(localEndReceipt)), .ended(.localEnded),
-    [.disarm(.placement), .reportEnded(.localEnded), .performed(end), .ended(.localEnded)]),
+    .placingAppStart, .event(.localEnd(localEndReceipt)), .ended(.localEnded),
+    [
+      .settleStart(.notAllowed(.ended(.localEnded))), .disarm(.placement), .performed(end),
+      .ended(.localEnded),
+    ]),
   .init(
-    .requestingStart, .event(.requested(muteOn)), .requesting(startAction),
+    .placingAppStart, .event(.requested(muteOn)), .placingStart(outgoing),
     [.reject(muteOn, .notAllowed(.dialing))]),
   .init(
-    .requestingStart, .event(.performed(a2, end)), .ended(.localEnded),
-    [.fulfill(a2), .disarm(.placement), .performed(end), .ended(.localEnded)]),
+    .placingAppStart, .event(.performed(a2, end)), .ended(.localEnded),
+    [
+      .settleStart(.notAllowed(.ended(.localEnded))), .fulfill(a2), .disarm(.placement),
+      .performed(end), .ended(.localEnded),
+    ]),
   .init(
-    .requestingStart, .event(.server(.endedRemotely)), .ended(.endedRemotely),
-    [.disarm(.placement), .reportEnded(.endedRemotely), .ended(.endedRemotely)]),
-  .init(.requestingStart, .event(.placed), .requesting(startAction), []),
+    .placingAppStart, .event(.server(.endedRemotely)), .ended(.endedRemotely),
+    [
+      .settleStart(.notAllowed(.ended(.endedRemotely))), .disarm(.placement),
+      .ended(.endedRemotely),
+    ]),
   .init(
-    .requestingStart, .event(.notPlaced), .ended(.failed(.notPlaced)),
-    [.disarm(.placement), .reportEnded(.failed(.notPlaced)), .ended(.failed(.notPlaced))]),
+    .placingAppStart, .event(.placed), .preparingStart(outgoing),
+    [.disarm(.placement), .arm(.mediaPreparation), .prepareMedia]),
   .init(
-    .requestingStart, .event(.frameworkReset), .ended(.failed(.frameworkReset)),
-    [.disarm(.placement), .ended(.failed(.frameworkReset))]),
+    .placingAppStart, .event(.notPlaced), .ended(.failed(.notPlaced)),
+    [
+      .settleStart(.notAllowed(.ended(.failed(.notPlaced)))), .disarm(.placement),
+      .ended(.failed(.notPlaced)),
+    ]),
+  .init(
+    .placingAppStart, .event(.frameworkReset), .ended(.failed(.frameworkReset)),
+    [
+      .settleStart(.notAllowed(.ended(.failed(.frameworkReset)))), .disarm(.placement),
+      .ended(.failed(.frameworkReset)),
+    ]),
 
   // MARK: Requesting a join
   .init(.requestingJoin, .event(.performed(a2, join)), .placing(held(a2, join)), [.joinRequested]),
@@ -593,7 +610,7 @@ let beginRows: [BeginRow] = [
   BeginRow(
     name: "the app starts an outgoing call",
     origin: .outgoing(outgoing),
-    phase: .requesting(startAction), effects: [.arm(.placement), .request(startAction)]),
+    phase: .placingStart(outgoing), effects: [.arm(.placement), .startRequested]),
   BeginRow(
     name: "joining a call that this device didn't know previews it without telling the app",
     origin: .joining(incoming(.preview, policy: PresentationPolicy())),

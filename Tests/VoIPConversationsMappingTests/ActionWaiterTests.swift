@@ -13,7 +13,7 @@ extension MappingClientTests {
       let h = try Harness()
       await prepare(h.media, with: .wait)
       let waiter = ActionWaiter(h.action, deadlines: h.deadlines, clock: h.clock)
-      try await h.client.request(h.action)
+      let start = Task { try await h.client.request(h.action) }
       guard case .startRequested = try await h.next() else {
         Issue.record("The SDK asks the handler to place the outgoing call")
         return
@@ -29,6 +29,7 @@ extension MappingClientTests {
       #expect(h.clock.pendingSleepCount == 2)
       #expect(result.value == nil)
       await h.media.finishPreparing(h.id, succeeded: true)
+      try await start.value
       let event = try await h.next()
       guard case .performed(.start, _) = event else {
         Issue.record("A prepared start produces the SDK's performed event")
@@ -49,9 +50,12 @@ extension MappingClientTests {
       let h = try Harness()
       await prepare(h.media, with: .fail)
       let waiter = ActionWaiter(h.action, deadlines: h.deadlines, clock: h.clock)
-      try await h.client.request(h.action)
+      let start = Task { try await h.client.request(h.action) }
       _ = try await h.next()
       await h.client.confirmPlaced(h.id)
+      await #expect(throws: ActionError.notAllowed(.ended(.failed(.media)))) {
+        try await start.value
+      }
       let event = try await h.next()
       guard case .ended(let call) = event else {
         Issue.record("Failed preparation ends the outgoing call")

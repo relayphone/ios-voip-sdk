@@ -50,8 +50,12 @@ enum CallMachine {
     case ringing
     /// The call is live elsewhere and followed in a call preview.
     case previewing(PreviewReason)
-    /// The app's start or join request is with the calling framework.
+    /// The app's join request is with the calling framework.
     case requesting(Action)
+    /// The app is placing an outgoing call before requesting native Start.
+    case placingStart(OutgoingCall)
+    /// An app-originated Start is waiting for eager media preparation.
+    case preparingStart(OutgoingCall)
     /// The calling framework performed the start or join; the app is placing the call.
     case placing(HeldAction)
     /// The call's media is being prepared before the held answer, start or join is fulfilled.
@@ -89,6 +93,10 @@ enum CallMachine {
     case unprovided, preparing, prepared
   }
 
+  enum StartProgress: Hashable, Sendable {
+    case connected, provideMedia
+  }
+
   /// One call's state.
   struct State: Hashable, Sendable {
     /// The call as the app sees it. Its status always matches ``phase``.
@@ -108,6 +116,9 @@ enum CallMachine {
     var admissionAttempt: AttemptID?
     var removeAfterAdmission = false
     var startAttempt: AttemptID?
+    var startProgress: [StartProgress] = []
+
+    var awaitsNativeStart: Bool { phase == .dialing && startAttempt != nil }
 
     var endResult: EndResult? {
       if let localEndReceipt { return .ended(localEndReceipt) }
@@ -136,6 +147,8 @@ enum CallMachine {
     case reportCompleted(PresentationOutcome)
     /// The platform refused to admit the incoming call.
     case admissionFailed(AttemptID, SystemFailure)
+    /// The system performed the outgoing Start.
+    case startAdmitted(AttemptID, ActionID, OutgoingCall)
     /// The platform refused the outgoing Start.
     case startFailed(AttemptID, SystemFailure)
     /// The calling framework asks the SDK to perform an action.
@@ -180,6 +193,12 @@ enum CallMachine {
     case reportIncoming(Call)
     /// Send the app's request to the calling framework.
     case request(Action)
+    /// Request a native Start and capture its attempt with the callback.
+    case requestStart(AttemptID, OutgoingCall, Call)
+    /// Remove a native session by the action that opened it.
+    case removeLateStart(ActionID, EndReason)
+    /// Settle the app's outstanding Start request.
+    case settleStart(AttemptID, ActionError?)
     /// Refuse the app's request.
     case reject(Action, ActionError)
     /// Complete a framework action successfully.
@@ -211,7 +230,7 @@ extension CallMachine.Phase {
     case .previewing(let reason): .previewing(reason)
     case .requesting(let action): action.isStart ? .dialing : .connecting
     case .placing(let held), .preparing(let held): held.action.isStart ? .dialing : .connecting
-    case .dialing: .dialing
+    case .placingStart, .preparingStart, .dialing: .dialing
     case .connecting: .connecting
     case .connected: .connected
     case .reconnecting: .reconnecting
@@ -261,7 +280,10 @@ extension CallMachine.Phase {
   /// Whether the audio session is configured for the call: it is preparing its media, or it
   /// takes part.
   var hasAudioConfiguration: Bool {
-    if case .preparing = self { true } else { isTakingPart }
+    switch self {
+    case .preparing, .preparingStart: true
+    default: isTakingPart
+    }
   }
 }
 

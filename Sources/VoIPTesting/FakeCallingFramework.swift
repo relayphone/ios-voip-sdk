@@ -77,7 +77,8 @@ public final class FakeCallingFramework: CallingFramework {
   /// How the fake answers each request. Defaults to ``RequestResult/perform``.
   public var requestResult = RequestResult.perform
 
-  /// Optionally handles a request after it is recorded, including suspending its completion.
+  /// Optionally handles a general action request, including suspending its completion.
+  /// Use ``requestResult`` to control native Start admission.
   public var requestHandler: (@VoIPActor @Sendable (Action) async throws(ActionError) -> Void)?
 
   /// Observes each fulfillment or failure immediately after it is recorded.
@@ -86,6 +87,7 @@ public final class FakeCallingFramework: CallingFramework {
   private var onEvent: (@VoIPActor (FrameworkEvent) -> Void)?
   private var waitingReports: [(call: Call, completion: @VoIPActor (PresentationOutcome) -> Void)] =
     []
+  private var waitingStarts: [CallID: @VoIPActor (Result<Void, ActionError>) -> Void] = [:]
   private var actionCount: UInt64 = 0
 
   /// Creates a fake calling framework that presents every call.
@@ -111,6 +113,13 @@ public final class FakeCallingFramework: CallingFramework {
     return waitingReports.remove(at: index).completion
   }
 
+  /// Takes the pending Start so a test can deliver its result, including after a reset.
+  public func takeStartCompletion(of id: CallID) -> (
+    @VoIPActor (Result<Void, ActionError>) -> Void
+  )? {
+    waitingStarts.removeValue(forKey: id)
+  }
+
   /// Asks the SDK to perform an action, as the system does when the user acts on its calling
   /// surfaces.
   ///
@@ -118,8 +127,7 @@ public final class FakeCallingFramework: CallingFramework {
   /// - Returns: The action's identifier, with which the SDK fulfils or fails it.
   @discardableResult
   public func perform(_ action: Action) -> ActionID {
-    actionCount += 1
-    let id = ActionID(rawValue: UUID(uuid: Self.uuid(actionCount)))
+    let id = nextActionID()
     send(.perform(id, action))
     return id
   }
@@ -166,6 +174,29 @@ public final class FakeCallingFramework: CallingFramework {
     }
   }
 
+  /// Records native Start and performs, defers or refuses it as ``requestResult`` says.
+  public func requestStart(
+    _ outgoing: OutgoingCall, for call: Call,
+    completion: @escaping @VoIPActor (Result<ActionID, ActionError>) -> Void
+  ) {
+    let action = Action.start(outgoing)
+    records.append(.request(action, call))
+    let complete: @VoIPActor (Result<Void, ActionError>) -> Void = { [weak self] result in
+      guard let self else { return }
+      completion(
+        result.map {
+          let id = nextActionID()
+          sentEvents.append(.perform(id, action))
+          return id
+        })
+    }
+    switch requestResult {
+    case .perform: complete(.success(()))
+    case .accept: waitingStarts[call.id] = complete
+    case .refuse(let error): complete(.failure(error))
+    }
+  }
+
   /// Records that the SDK completed an action.
   public func fulfill(_ id: ActionID) {
     let record = Record.fulfill(id)
@@ -193,6 +224,11 @@ public final class FakeCallingFramework: CallingFramework {
   /// Records that a call ended.
   public func reportEnded(_ id: CallID, reason: EndReason) {
     records.append(.reportEnded(id, reason))
+  }
+
+  private func nextActionID() -> ActionID {
+    actionCount += 1
+    return ActionID(rawValue: UUID(uuid: Self.uuid(actionCount)))
   }
 
   private static func uuid(_ number: UInt64) -> uuid_t {

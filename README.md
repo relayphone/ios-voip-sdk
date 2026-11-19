@@ -211,6 +211,9 @@ for await event in client.events() {
 }
 ```
 
+Handle placement events independently of the task awaiting `request(.start(call))`. The Start
+request completes when the calling framework performs native Start after placement.
+
 A stream from `events()` starts when the app subscribes, so it can miss the first events of a
 cold launch: the SDK reports the call of the VoIP push that launched the app as soon as PushKit
 delivers it. Code that must see every event is a `CallObserver`, passed to `start` as

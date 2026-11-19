@@ -21,19 +21,14 @@ private let pending: [String: String] = [
   "claim-timeout-reconcile": "No native claim budget or reconciliation port.",
   "cross-line-waiting":
     "No line identity or shared participation slot to refuse a second Answer or Start.",
-  "early-connected-start-rejected":
-    "The Swift journey driver cannot defer and reject native Start.",
   "end-before-admission": "Alias-addressed ends cannot reach a call during pending admission.",
-  "end-before-start-admission": "The Swift journey driver performs native Start immediately.",
   "http-answer-allow": "No native HTTP claim transport or permit handling.",
   "http-answer-late-permit-release": "No native HTTP compensation for a stale permit.",
   "http-answer-refused-elsewhere": "No native HTTP refusal mapping.",
   "http-answer-timeout-reconcile": "No native HTTP deadline and reconciliation handling.",
   "incoming-killed-answer": "Native Answer prepares media without a service claim.",
   "late-answer-permit": "No native claim deadline, reconciliation, or stale permit release.",
-  "late-start-admission-after-end": "The Swift journey driver cannot deliver Start after End.",
   "outgoing-deferred-binding": "Remote alias binding and alias-addressed events are missing.",
-  "stale-start-admission": "The Swift journey driver cannot deliver Start for a stale attempt.",
 ]
 
 @Suite(.timeLimit(.minutes(1)))
@@ -61,19 +56,7 @@ struct SpecJourneyTests {
     try #require(Set(ids).count == ids.count, "Duplicate journey IDs")
     #expect(Set(pending.keys).isSubset(of: Set(ids)), "Unknown pending journey IDs")
     for (id, file) in zip(v0IDs, files) {
-      let journey: SpecJourney
-      do {
-        journey = try JSONDecoder().decode(SpecJourney.self, from: Data(contentsOf: file))
-      } catch DecodingError.dataCorrupted(let context)
-        where context.debugDescription == "Unexpected fields: deferStartAdmission"
-        && pending[id] != nil
-      {
-        let reason = try #require(pending[id])
-        withKnownIssue(Comment(rawValue: "\(id) — \(reason)")) {
-          Issue.record(Comment(rawValue: context.debugDescription))
-        }
-        continue
-      }
+      let journey = try JSONDecoder().decode(SpecJourney.self, from: Data(contentsOf: file))
       try #require(journey.id.rawValue == id, "Journey ID must match its filename")
       let differences = try await SpecJourneyDriver.run(journey)
       let details = "\(id)\n\(differences.joined(separator: "\n"))"

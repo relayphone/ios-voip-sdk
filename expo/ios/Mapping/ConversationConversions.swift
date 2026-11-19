@@ -27,6 +27,9 @@ struct CommandError: Error {
   static let notForeground = CommandError(
     code: .notForeground, message: "Media permission requests require foreground UI")
 
+  static let failedBeforePerformance = CommandError(
+    code: .conversation, message: "The conversation failed before the SDK carried out the request")
+
   /// The SDK's refusal of an action.
   init(_ error: ActionError) {
     switch error {

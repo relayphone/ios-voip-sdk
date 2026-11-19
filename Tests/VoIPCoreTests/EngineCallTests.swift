@@ -185,9 +185,9 @@ extension EngineTests {
 
     @Test func outgoingCallIsPlacedAndConnects() async throws {
       let h = try Harness()
-      try await h.client.request(.start(outgoing))
-      #expect(try await h.next() == .startRequested(callID))
+      let request = try await h.beginStart(outgoing)
       await h.client.confirmPlaced(callID)
+      try await request.value
       #expect(try await h.next() == .performed(.start(outgoing), .dialing))
       await h.client.receive(.connected, for: callID, eventID: e1)
 
@@ -216,17 +216,20 @@ extension EngineTests {
     func outgoingCallTheAppCannotPlaceEnds(startedFromSystem: Bool) async throws {
       let h = try Harness()
       if startedFromSystem {
-        await h.framework.perform(.start(outgoing))
+        let action = await h.framework.perform(.start(outgoing))
+        #expect(try await h.next() == .startRequested(callID))
+        await h.client.confirmNotPlaced(callID)
+        #expect(
+          await h.records.suffix(2) == [.fail(action), .reportEnded(callID, .failed(.notPlaced))])
       } else {
-        try await h.client.request(.start(outgoing))
+        let request = try await h.beginStart(outgoing)
+        await h.client.confirmNotPlaced(callID)
+        await #expect(throws: ActionError.notAllowed(.ended(.failed(.notPlaced)))) {
+          try await request.value
+        }
+        #expect(await h.records.isEmpty)
       }
-      #expect(try await h.next() == .startRequested(callID))
-      let start = try await h.lastActionID()
-
-      await h.client.confirmNotPlaced(callID)
       #expect(try await h.next() == .ended(callID, .failed(.notPlaced)))
-      #expect(
-        await h.records.suffix(2) == [.fail(start), .reportEnded(callID, .failed(.notPlaced))])
       #expect(await h.media.records.isEmpty)
       await h.until { $0.calls.isEmpty }
 
@@ -257,28 +260,12 @@ extension EngineTests {
       #expect(try await h.next() == .joinRequested(callID))
     }
 
-    @Test func appCanGiveUpBeforeTheSystemPerformsTheStart() async throws {
-      let h = try Harness()
-      let framework = h.framework
-      await onVoIPActor { framework.requestResult = .accept }
-      try await h.client.request(.start(outgoing))
-
-      await h.client.confirmNotPlaced(callID)
-      #expect(try await h.next() == .ended(callID, .failed(.notPlaced)))
-      #expect(await h.records.last == .reportEnded(callID, .failed(.notPlaced)))
-
-      // The system performs the start late, and the SDK fails it.
-      let start = await h.framework.perform(.start(outgoing))
-      #expect(await h.records.last == .fail(start))
-      try await h.expectNoEvents()
-    }
-
     @Test func confirmingNotPlacedLeavesOtherCallsAlone() async throws {
       let h = try Harness()
       await h.client.confirmNotPlaced(callID)
-      try await h.client.request(.start(outgoing))
-      #expect(try await h.next() == .startRequested(callID))
+      let request = try await h.beginStart(outgoing)
       await h.client.confirmPlaced(callID)
+      try await request.value
       #expect(try await h.next() == .performed(.start(outgoing), .dialing))
       let before = await h.records
 
@@ -424,8 +411,10 @@ extension EngineTests {
       let h = try Harness()
       let framework = h.framework
       await onVoIPActor { framework.requestResult = .refuse(.refused(nil)) }
+      let request = try await h.beginStart(outgoing)
+      await h.client.confirmPlaced(callID)
       await #expect(throws: ActionError.refused(nil)) {
-        try await h.client.request(.start(outgoing))
+        try await request.value
       }
       let failure = SystemFailure(platform: .ios, operation: .start)
       #expect(try await h.next() == .ended(callID, .failed(.systemFailed(failure))))
