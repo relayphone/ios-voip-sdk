@@ -6,6 +6,7 @@ import {
   RevisionStore,
   reconcile,
 } from "./conversations/runtime";
+import type { ConversationEvent } from "./conversations/transport";
 import type {
   AudioRoutes,
   CallPreviewActivities,
@@ -45,37 +46,37 @@ class Runtime {
     );
     const snapshot = bridge.snapshot;
     this.update(snapshot.revision, snapshot.conversations);
-    this.read().catch((error: unknown) => this.conversations.fail(error));
+    this.read().catch(this.conversations.fail.bind(this.conversations));
     bridge
       .getAudioRoutes()
       .then((event) => this.routes.accept(event.revision, event))
-      .catch((error: unknown) => this.routes.fail(error));
+      .catch(this.routes.fail.bind(this.routes));
     bridge
       .getPushToken()
       .then((event) => this.token.accept(event.revision, event.token))
-      .catch((error: unknown) => this.token.fail(error));
+      .catch(this.token.fail.bind(this.token));
     // Android has no call preview Live Activities.
     if (bridge.getCallPreviewActivities) {
       bridge.addListener("callPreviewActivitiesChanged", (event) =>
         this.previews.accept(event.revision, event.activities)
       );
-      this.readPreviews().catch((error: unknown) => this.previews.fail(error));
+      this.readPreviews().catch(this.previews.fail.bind(this.previews));
     }
     // Android has no Focus filter state.
     if (bridge.getFocusFilterState) {
       bridge.addListener("focusFilterStateChanged", (event) =>
         this.focus.accept(event.revision, event.state)
       );
-      this.readFocus().catch((error: unknown) => this.focus.fail(error));
+      this.readFocus().catch(this.focus.fail.bind(this.focus));
     }
   }
-  async readFocus(): Promise<FocusFilterState | null> {
+  async readFocus() {
     if (!bridge.getFocusFilterState) return null;
     const event = await bridge.getFocusFilterState();
     this.focus.accept(event.revision, event.state);
     return this.focus.read();
   }
-  async readPreviews(): Promise<CallPreviewActivities | null> {
+  async readPreviews() {
     if (!bridge.getCallPreviewActivities) return null;
     const event = await bridge.getCallPreviewActivities();
     this.previews.accept(event.revision, event.activities);
@@ -84,18 +85,19 @@ class Runtime {
   private update(
     revision: number,
     conversations: readonly Conversation[]
-  ): void {
+  ) {
     this.conversations.accept(
       revision,
       reconcile(this.conversations.peek(), conversations)
     );
   }
-  async read(): Promise<readonly Conversation[]> {
+  async read() {
     const event = await bridge.getConversations();
     this.update(event.revision, event.conversations);
     return this.conversations.read();
   }
 }
+// SAFETY: This shared registry slot is initialized only with the runtime for this native bridge.
 const registry = globalThis as typeof globalThis & {
   __expoConversationsRuntime?: Runtime;
 };
@@ -103,27 +105,27 @@ const runtime = registry.__expoConversationsRuntime ?? new Runtime();
 registry.__expoConversationsRuntime = runtime;
 
 /** Complete current conversation list, including native cold-launch state. @category State */
-export const getConversations = (): Promise<readonly Conversation[]> =>
+export const getConversations = () =>
   runtime.read();
 /** Subscribe to immutable system state. @category Hooks */
-export function useConversations(): readonly Conversation[] {
+export function useConversations() {
   return useSyncExternalStore(
     runtime.conversations.subscribe,
     runtime.conversations.read
   );
 }
 /** Subscribe to one stable conversation object. @category Hooks */
-export function useConversation(id: ConversationId): Conversation | undefined {
+export function useConversation(id: ConversationId) {
   return useSyncExternalStore(runtime.conversations.subscribe, () =>
     runtime.conversations.read().find((conversation) => conversation.id === id)
   );
 }
 /** Native audio endpoints and the actual current output. @category Hooks */
-export function useAudioRoutes(): AudioRoutes {
+export function useAudioRoutes() {
   return useSyncExternalStore(runtime.routes.subscribe, runtime.routes.read);
 }
 /** Current native push registration, or null. @category Hooks */
-export function usePushToken(): PushToken | null {
+export function usePushToken() {
   return useSyncExternalStore(runtime.token.subscribe, runtime.token.read);
 }
 /**
@@ -132,13 +134,13 @@ export function usePushToken(): PushToken | null {
  * without the option. @category Call previews
  */
 export const getCallPreviewActivities =
-  (): Promise<CallPreviewActivities | null> => runtime.readPreviews();
+  () => runtime.readPreviews();
 /**
  * Subscribe to what the app's servers need for call previews' Live Activities; send each change
  * to them. Null on Android and without the `callPreviewActivities` plugin option.
  * @category Hooks
  */
-export function useCallPreviewActivities(): CallPreviewActivities | null {
+export function useCallPreviewActivities() {
   return useSyncExternalStore(
     runtime.previews.subscribe,
     runtime.previews.read
@@ -148,7 +150,7 @@ export function useCallPreviewActivities(): CallPreviewActivities | null {
  * iOS, with the `focusFilter` plugin option: what the app's Focus filter last asked for. Null on
  * Android and without the option. @category Focus
  */
-export const getFocusFilterState = (): Promise<FocusFilterState | null> =>
+export const getFocusFilterState = () =>
   runtime.readFocus();
 /**
  * Subscribe to the app's Focus filter state, which changes when a Focus that has the filter turns
@@ -156,33 +158,45 @@ export const getFocusFilterState = (): Promise<FocusFilterState | null> =>
  * Android and without the `focusFilter` plugin option.
  * @category Hooks
  */
-export function useFocusFilterState(): FocusFilterState | null {
+export function useFocusFilterState() {
   return useSyncExternalStore(runtime.focus.subscribe, runtime.focus.read);
 }
 /** Register at module scope before React mounts; null detaches and cancels old work. @category Handler */
 export function setConversationHandler(
   handler: ConversationHandler | null
-): void {
+) {
   runtime.handler.set(handler);
 }
+type HookEvent = ConversationEvent | {
+  type: "pushTokenUpdated";
+  payload: ConversationEventMap["pushTokenUpdated"];
+};
+
+function matchesEvent<Name extends keyof ConversationEventMap>(
+  event: HookEvent,
+  name: Name
+): event is HookEvent & { type: Name; payload: ConversationEventMap[Name] } {
+  return event.type === name;
+}
+
 /** Lifecycle signals that cannot be derived from state. @category Hooks */
 export function useConversationEvent<Name extends keyof ConversationEventMap>(
   name: Name,
   listener: (event: ConversationEventMap[Name]) => void
-): void {
+) {
   const callback = useRef(listener);
   useEffect(() => {
     callback.current = listener;
   }, [listener]);
   useEffect(() => {
+    const deliver = (event: HookEvent) => {
+      if (matchesEvent(event, name)) callback.current(event.payload);
+    };
     if (name === "pushTokenUpdated")
       return runtime.token.subscribe(() =>
-        callback.current(runtime.token.read() as ConversationEventMap[Name])
+        deliver({ type: "pushTokenUpdated", payload: runtime.token.read() })
       );
-    const subscription = bridge.addListener("conversationEvent", (event) => {
-      if (event.type === name)
-        callback.current(event.payload as ConversationEventMap[Name]);
-    });
+    const subscription = bridge.addListener("conversationEvent", deliver);
     return () => subscription.remove();
   }, [name]);
 }

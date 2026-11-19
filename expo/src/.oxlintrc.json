@@ -1,0 +1,13 @@
+{
+  "extends": ["../../.oxlintrc.json"],
+  "overrides": [
+    {
+      "files": ["api.ts"],
+      "rules": {
+        "anti-slop/no-unknown-parameters": "error",
+        "anti-slop/require-safety-comment-for-type-assertion": "error",
+        "landmines-types/no-explicit-return-types": "error"
+      }
+    }
+  ]
+}
