@@ -27,7 +27,7 @@ export class CommandFailure extends Error {
 }
 
 /** Runs a command and returns its trimmed output, failing if it doesn't succeed. */
-export function run(command: string, args: readonly string[], options: RunOptions = {}): string {
+export function run(command: string, args: readonly string[], options: RunOptions = {}) {
   const spawnOptions: SpawnSyncOptions = {
     cwd: options.directory ?? repository,
     env: options.environment ?? process.env,
@@ -52,18 +52,18 @@ export function run(command: string, args: readonly string[], options: RunOption
 }
 
 /** The value after `--name` in the arguments, or undefined. */
-export function option(args: readonly string[], name: string): string | undefined {
+export function option(args: readonly string[], name: string) {
   const index = args.indexOf(`--${name}`);
   return index >= 0 ? args[index + 1] : undefined;
 }
 
 /** Whether a module is the program node was asked to run. */
-export function isMain(url: string): boolean {
+export function isMain(url: string) {
   return process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(url);
 }
 
 /** Runs a tool's main function, printing its failure and setting the exit status. */
-export async function main(body: () => void | Promise<void>): Promise<void> {
+export async function main(body: () => void | Promise<void>) {
   try {
     await body();
   } catch (error) {

@@ -57,6 +57,26 @@
   },
   "overrides": [
     {
+      "files": [
+        "tools/command.ts",
+        "tools/json-fields.ts",
+        "tools/simulator-{app,runtime,test-result}{,.test}.ts",
+        "tools/command.test.ts"
+      ],
+      "rules": {
+        "landmines-types/no-explicit-return-types": "error",
+        "anti-slop/require-safety-comment-for-type-assertion": "error",
+        "anti-slop/no-runtime-typeof": "error"
+      }
+    },
+    {
+      "files": ["tools/json-fields.ts"],
+      "rules": {
+        // JSON guards must check primitive and object types at the input boundary.
+        "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }]
+      }
+    },
+    {
       "files": ["tools/package-exact.ts", "tools/package-exact.test.ts"],
       "rules": {
         "anti-slop/no-shape-in-symbol-names": "error",

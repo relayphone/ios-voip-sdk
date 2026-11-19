@@ -8,10 +8,14 @@ import { classifySimulatorFailure, runnerHungBeforeConnecting, systemMemoryFailu
 test('retries only a pre-connection hang with zero failed tests', () => {
   const hang = 'runner hung before establishing connection';
   assert.equal(runnerHungBeforeConnecting('{"failedTests":0}', hang), true);
-  for (const summary of ['{}', '{"failedTests":1}', '{"failedTests":-1}', '{"failedTests":"0"}']) {
+  for (const summary of [
+    '{}', 'null', 'malformed', '{"failedTests":1}', '{"failedTests":-1}', '{"failedTests":"0"}',
+    '{"failedTests":0,"testFailures":null}', '{"failedTests":0,"testFailures":[{}]}',
+  ]) {
     assert.equal(runnerHungBeforeConnecting(summary, hang), false);
   }
   assert.equal(runnerHungBeforeConnecting('{"failedTests":0}', 'assertion failed'), false);
+  assert.equal(runnerHungBeforeConnecting('{"failedTests":0}', hang + '\nExpectation failed: false'), false);
 });
 
 const busSummary = JSON.stringify({ failedTests: 1, testFailures: [{ failureText: 'Test crashed with signal bus.' }] });
