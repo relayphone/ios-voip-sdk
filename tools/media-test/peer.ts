@@ -36,10 +36,12 @@ export class MediaPeer {
   private captureGeneration = 0;
   private statistics: Promise<void> | undefined;
   private readonly readStatistics: typeof receiverStatistics;
+  private readonly captureLimitSamples: number;
   private readonly lifecycle = new PeerLifecycle();
 
-  constructor(readStatistics: typeof receiverStatistics = receiverStatistics) {
+  constructor(readStatistics: typeof receiverStatistics = receiverStatistics, captureSeconds: 3 | 4 = 3) {
     this.readStatistics = readStatistics;
+    this.captureLimitSamples = captureSeconds * 48_000;
     this.reconnectControl = new PeerReconnect({
       available: () => this.running && this.status().connected,
       publications: () => [...this.room.localParticipant!.trackPublications.values()]
@@ -93,7 +95,7 @@ export class MediaPeer {
           for (const sample of frame.data) {
             const value = sample / 32768;
             this.energy += value * value;
-            if (this.received.length < 48_000 * 3) this.received.push(value);
+            if (this.received.length < this.captureLimitSamples) this.received.push(value);
           }
           this.receivedSamples += frame.data.length;
         }

@@ -88,6 +88,27 @@ test('first clean cycle skips a complete cycle carrying receiver loss or conceal
     assert.ok(result.channels[0]!.offsetSamples >= rate * 1.02);
   }
 });
+
+test('retaining the full duplex window preserves a clean cycle beyond a truncated uplink', () => {
+  const samples = new Float32Array(4 * rate);
+  const leadIn = 0.18 * rate;
+  samples.set(emissionSamples(marker, rate, samples.length - leadIn), leadIn);
+  const transport = Array.from({ length: 41 }, (_, index) => ({
+    sample: index * rate / 10, timestamp: index, streamID: 'receiver',
+    packetsLost: 0, concealedSamples: index >= 13 ? 480 : 0, insertedSamples: 0, removedSamples: 0,
+  }));
+  const observe = (pcm: Float32Array) => measureMarker({
+    sampleRate: rate, channels: [Array.from(pcm)], formatChanged: false, transport,
+  }, marker, 'host-poll');
+  const truncated = observe(samples.subarray(0, 3 * rate));
+  const full = observe(samples);
+  assert.equal(truncated.clean, false);
+  assert.equal(full.clean, true);
+  assert.ok(full.channels[0]!.cycles.filter(cycle => cycle.complete && cycle.transport.concealed === 480).length >= 2);
+  const accepted = full.channels[0]!.cycles.find(cycle => cycle.accepted);
+  assert.ok(accepted && accepted.transport.requiredEndSample > 3 * rate);
+});
+
 test('a rejected first cycle does not hide a later unchanged clean emission', () => {
   const samples = emissionSamples(marker, rate, rate * 3);
   samples.fill(0, rate * 0.75, rate * 0.81);

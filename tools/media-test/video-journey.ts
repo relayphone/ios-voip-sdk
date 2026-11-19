@@ -14,7 +14,7 @@ import { assertNativeTeardown } from './result-receipt.ts';
 import { observeSilence } from './silence-window.ts';
 import { withSimulatorMediaAudio } from './simulator-media.ts';
 import { diagnoseNativeStartup } from './startup-diagnostics.ts';
-import { assertDuplexAudio, assertLocalAudioDeparture, hasDuplexSamples, hasUplinkSamples, heldOutputReceipt, readAudioRoute, readJourneyAudio } from './video-journey-audio.ts';
+import { assertDuplexAudio, assertLocalAudioDeparture, hasDuplexSamples, hasUplinkSamples, heldOutputReceipt, journeyCaptureSeconds, readAudioRoute, readJourneyAudio } from './video-journey-audio.ts';
 import { appParticipant, assertRemoteProducer, assessJourneyVideo, readVideoSnapshot, remoteUplinkCoverage, type VideoSnapshot } from './video-journey-evidence.ts';
 import { hostVideoBoundary, videoGates, type VideoSourceReceipt } from './video-observation.ts';
 import type { VideoPeer } from './video-peer.ts';
@@ -86,9 +86,9 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
         assert.equal(pcm.remoteAudioPublication, expectedDownlink, 'Resumed PCM came from a different downlink');
       }
       const capturedAtMs = performance.now();
-      const markers = await assertDuplexAudio(pcm, harness, { up: createMarker(phaseId), down: createMarker(downId) });
+      const { markers, uplinkCapture } = await assertDuplexAudio(pcm, harness, { up: createMarker(phaseId), down: createMarker(downId) });
       keep(label, { phaseId, remoteAudioPublication: pcm.remoteAudioPublication,
-        startedAtMs, capturedAtMs, analyzedAtMs: performance.now(), markers });
+        startedAtMs, capturedAtMs, analyzedAtMs: performance.now(), uplinkCapture, markers });
       for (const marker of Object.values(markers)) {
         assert.ok(marker.clean && marker.complete && marker.postRollObserved, `${label}: missing clean fresh audio`);
       }
@@ -396,7 +396,8 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
     fixtureFile = join(directory, 'media-fixture.json');
     const mailbox = prepareNativeJourney(directory, { fixtureId, conversationId });
     signal.throwIfAborted();
-    harness = await startHarness(harnessDirectory, fixtureId);
+    // Retain uplink already received while the native decoder and output fill their windows.
+    harness = await startHarness(harnessDirectory, fixtureId, { captureSeconds: journeyCaptureSeconds });
     signal.throwIfAborted();
     watchdog = setTimeout(hardStop, 180_000).unref();
     const initialPeer = await harness.openVideo(clockID);

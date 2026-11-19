@@ -6,6 +6,8 @@ import type { PCMCapture } from './marker-evidence.ts';
 import { measureMarkerAsync } from './measure-marker.ts';
 import type { NativeJourneyReply } from './native-journey.ts';
 
+export const journeyCaptureSeconds = 4;
+
 type AudioStage = { pcm?: PCMCapture; sampleRate: number; retainedSamples: number; transportCount: number; lastTransportSample: number;
   observation: { installed: boolean; frameSeconds: number };
   droppedCallbacks: number; lastCallbackAtMs?: number };
@@ -39,18 +41,20 @@ export function hasUplinkSamples(host: ReturnType<MediaHarness['status']>) {
 
 export function hasDuplexSamples(audio: JourneyAudio, host: ReturnType<MediaHarness['status']>) {
   return audio.audioActive && hasUplinkSamples(host) && [audio.decoded, audio.output].every(s =>
-      s.observation.installed && s.sampleRate > 0 && s.retainedSamples >= s.sampleRate * 4 &&
-      s.transportCount >= 2 && s.lastTransportSample >= s.sampleRate * 4);
+      s.observation.installed && s.sampleRate > 0 && s.retainedSamples >= s.sampleRate * journeyCaptureSeconds &&
+      s.transportCount >= 2 && s.lastTransportSample >= s.sampleRate * journeyCaptureSeconds);
 }
 
 export async function assertDuplexAudio(audio: JourneyAudio, harness: MediaHarness, markers: { up: MediaMarker; down: MediaMarker }) {
   assert.ok(audio.decoded.pcm && audio.output.pcm, 'Missing native PCM from the requested audio snapshot');
+  const host = harness.observation();
   const [up, decoded, output] = await Promise.all([
-    measureMarkerAsync(harness.observation().capture, markers.up, 'host-poll'),
+    measureMarkerAsync(host.capture, markers.up, 'host-poll'),
     measureMarkerAsync(audio.decoded.pcm, markers.down),
     measureMarkerAsync(audio.output.pcm, markers.down),
   ]);
-  return { up, decoded, output };
+  return { markers: { up, decoded, output },
+    uplinkCapture: { retainedSamples: host.capture.channels[0]?.length ?? 0, receivedSamples: host.receiver.receivedSamples } };
 }
 
 export function heldOutputReceipt(audio: JourneyAudio, beforeHoldAtMs: number, holdAtMs: number, observedAtMs: number) {

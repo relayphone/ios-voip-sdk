@@ -557,9 +557,9 @@ The simulator driver runs initial video and local end, app upgrade and downgrade
 duplicate request, server upgrade and remote end, and hold and resume. Each invocation
 uses the same build and has its own 30-second acquisition and 180-second process budgets.
 Each reuses the audio Room and requires clean fresh duplex audio. Each audio phase starts
-one capture with new markers. The host retains three seconds of uplink. The native
-decoder and output each retain four seconds and wait for an actual RTP counter to
-cover the end of those samples before returning PCM for analysis. A complete clean
+one capture with new markers. The host, native decoder and native output each retain
+up to four seconds. The driver waits for actual native RTP counters to cover the end
+of those samples before requesting native PCM for analysis. A complete clean
 cycle and its post-roll must qualify at each observation point. Audio polling and PCM
 responses omit the video ledgers. In the downgrade scenario, one fresh capture
 verifies audio after downgrade and immediately before local end. Hold requires both
