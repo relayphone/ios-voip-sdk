@@ -280,9 +280,11 @@ test('shuts down and releases when a heartbeat reports lost isolation during the
 const proofReadFailure = Object.assign(new Error('temporary failure'), { code: 'EIO' });
 
 test('retries two failed proof reads after the checker and admits the journey on the third', async () => {
-  const { start, events } = fixture([valid, proofReadFailure, proofReadFailure, valid]);
+  const { start, events, reports } = fixture([valid, proofReadFailure, proofReadFailure, valid]);
   await start(async () => { events.push('journey'); });
   assert.deepEqual(events, ['up', 'lease', 'checker', 'lease', 'lease', 'lease', 'journey', 'down']);
+  assert.equal(reports.filter(line => line.includes('"outcome":"exit"')).length, 2);
+  assert.match(reports.join('\n'), /"attempt":3,.*"outcome":"success"/);
 });
 
 test('three failed proof reads stop the journey and release the lease', async () => {
@@ -291,16 +293,18 @@ test('three failed proof reads stop the journey and release the lease', async ()
     events.push('journey');
     await delay(10_000, undefined, { signal });
     assert.fail('journey was not aborted');
-  }), /Isolated simulator lease CLI failed \(lease\): EIO/);
+  }), { message: 'proof refresh: 3 attempts (exit EIO, exit EIO, exit EIO)' });
   assert.deepEqual(events, ['up', 'lease', 'checker', 'lease', 'journey', 'lease', 'lease', 'lease', 'shutdown', 'down']);
 });
 
 test('proof refresh caps command timeouts and backoffs at 30 seconds total', async () => {
   const timeouts: number[] = [];
+  const reports: string[] = [];
   let time = 0;
   const attached = { ...config, environment: { EXAMPLE_LEASE_ID: id, EXAMPLE_LEASE_TOKEN: 'test' } };
   await assert.rejects(withIsolatedSimulatorLease(attached, new AbortController().signal,
-    async () => assert.fail('journey was started'), async () => 'PASS: slot 2 isolated (both devices)', () => {}, {
+    async () => assert.fail('journey was started'), async () => 'PASS: slot 2 isolated (both devices)',
+    line => reports.push(line), {
       now: () => now,
       elapsed: () => time,
       pause: async (ms, signal) => {
@@ -312,11 +316,17 @@ test('proof refresh caps command timeouts and backoffs at 30 seconds total', asy
         timeouts.push(timeout);
         if (timeouts.length === 1) return { stdout: JSON.stringify(valid), stderr: '' };
         time += timeout;
-        throw proofReadFailure;
+        if (timeouts.length === 3) {
+          throw Object.assign(new Error(), { code: 1, stderr: 'lease_secret_sensitive diagnostic\nsecond line' });
+        }
+        throw Object.assign(new Error(), { killed: true, code: null });
       },
-    }), /Isolated simulator lease CLI failed \(lease\): EIO/);
+    }), { message: 'proof refresh: 3 attempts (timeout 10.0s, exit 1 "[redacted] diagnostic", timeout 8.0s)' });
   assert.deepEqual(timeouts, [10_000, 10_000, 10_000, 8_000]);
   assert.equal(time, 30_000);
+  assert.match(reports.join('\n'), /"attempt":1,"startedAt":"2026-11-18T/);
+  assert.match(reports.join('\n'), /"durationMS":10000,"outcome":"timeout"/);
+  assert.doesNotMatch(reports.join('\n'), /sensitive|second line/);
 });
 
 test('the simulator proof expiry stops a journey during a refresh backoff', async () => {

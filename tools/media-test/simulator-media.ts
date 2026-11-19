@@ -1,14 +1,15 @@
 import { execFile, spawn } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { command as executeCommand, deadline } from './fixture-runtime.ts';
 import { checkerPhaseLog, isolatedLeaseConfiguration, IsolatedLeaseRefusal, withIsolatedSimulatorLease, type LeaseConfiguration } from './isolated-simulator-lease.ts';
+import { measureLeaseAttempt, summarizeLeaseAttempts, type LeaseAttempt } from './lease-attempt.ts';
 
 /** Evidence mapped from the verified simulator lease. */
 export interface SimulatorLeaseAudio {
@@ -61,11 +62,13 @@ const guardSources = ['main.swift', 'AudioTransport.swift', 'LeaseAudioMonitor.s
 );
 
 export async function readSimulatorLaunchdPID(udid: string, signal: AbortSignal, {
-  command = executeCommand, elapsed = () => performance.now(),
+  command = executeCommand, elapsed = () => performance.now(), now = Date.now,
   pause = (ms, signal) => delay(ms, undefined, { signal }),
+  redact = value => value, reportAttempt = () => {},
 }: {
-  command?: typeof executeCommand; elapsed?: () => number;
+  command?: typeof executeCommand; elapsed?: () => number; now?: () => number;
   pause?: (ms: number, signal: AbortSignal) => Promise<void>;
+  redact?: (value: string) => string; reportAttempt?: (entry: LeaseAttempt) => void;
 } = {}): Promise<string> {
   const deadline = elapsed() + 90_000;
   signal.throwIfAborted();
@@ -76,26 +79,26 @@ export async function readSimulatorLaunchdPID(udid: string, signal: AbortSignal,
     throw new IsolatedLeaseRefusal('The isolated simulator did not finish booting', { cause });
   }
 
-  let failure: unknown;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  const failures: LeaseAttempt[] = [];
+  for (let attempt = 1; attempt <= 3; attempt++) {
     signal.throwIfAborted();
     const remaining = Math.floor(deadline - elapsed());
     if (remaining < 1) break;
-    try {
-      // Relative paths select the simulator runtime's executable in simctl.
-      const pid = await command('xcrun', ['simctl', 'spawn', udid, 'bin/launchctl', 'managerpid'],
-        Math.min(remaining, 5_000), signal);
-      signal.throwIfAborted();
-      if (/^[1-9]\d*$/.test(pid) && Number(pid) > 1 && Number(pid) <= 0x7fff_ffff) return pid;
-      throw new Error('launchctl managerpid did not return a valid process identifier');
-    } catch (error) {
-      signal.throwIfAborted();
-      failure = error;
-    }
-    if (attempt < 2 && elapsed() + 500 < deadline) await pause(500, signal);
+    // Relative paths select the simulator runtime's executable in simctl.
+    const read = await measureLeaseAttempt('launchd PID', attempt, signal, { now, elapsed, redact, report: reportAttempt },
+      () => command('xcrun', ['simctl', 'spawn', udid, 'bin/launchctl', 'managerpid'], Math.min(remaining, 5_000), signal),
+      pid => {
+        if (/^[1-9]\d*$/.test(pid) && Number(pid) > 1 && Number(pid) <= 0x7fff_ffff) return pid;
+        throw new Error('launchctl managerpid did not return a valid process identifier');
+      });
+    signal.throwIfAborted();
+    if ('value' in read) return read.value;
+    failures.push(read.failure);
+    if (attempt < 3 && elapsed() + 500 < deadline) await pause(500, signal);
     else break;
   }
-  throw new IsolatedLeaseRefusal('Could not read the isolated simulator launchd PID', { cause: failure });
+  throw new IsolatedLeaseRefusal('Could not read the isolated simulator launchd PID. '
+    + summarizeLeaseAttempts('launchd PID', failures));
 }
 
 async function startAudioGuard(
@@ -172,9 +175,10 @@ async function startAudioGuard(
 /** Checks admission and holds the host audio guard from before setup through cleanup. */
 export async function withSimulatorMediaAudio<T>(
   run: (signal: AbortSignal, simulator?: string, trackSimulatorApp?: (pid: number) => void) => Promise<T>,
-  { authorization = { environment: process.env }, start = startAudioGuard, lease = withIsolatedSimulatorLease, localDestination }:
+  { authorization = { environment: process.env }, start = startAudioGuard, lease = withIsolatedSimulatorLease, localDestination,
+    leaseReceipt }:
     { authorization?: Authorization; start?: typeof startAudioGuard; lease?: typeof withIsolatedSimulatorLease;
-      localDestination?: { simulator: string } | 'check-lease' } = {},
+      localDestination?: { simulator: string } | 'check-lease'; leaseReceipt?: string } = {},
 ): Promise<T> {
   const { environment } = authorization;
   const localLease = isHosted(environment) ? undefined : isolatedLeaseConfiguration(environment);
@@ -193,6 +197,11 @@ export async function withSimulatorMediaAudio<T>(
     report(`failed: ${failure.message}`);
     throw failure;
   }
+  const attempts: LeaseAttempt[] = [];
+  const reportAttempt = (entry: LeaseAttempt) => {
+    attempts.push(entry);
+    console.error('Isolated lease attempt ' + JSON.stringify(entry));
+  };
   const interruption = new AbortController();
   const interrupt = () => interruption.abort(new Error('Simulator media journey interrupted'));
   if (localLease) {
@@ -200,6 +209,7 @@ export async function withSimulatorMediaAudio<T>(
     process.on('SIGTERM', interrupt);
   }
   let guard: AudioGuard | undefined;
+  let runFailed = false;
   async function arm(args?: string[]) {
     try {
       guard = await start(line => record(`Core Audio route ${line}`), environment, args);
@@ -219,25 +229,41 @@ export async function withSimulatorMediaAudio<T>(
       return run(leaseSignal, simulator, guard?.track);
     }, (checker, udid, leaseSignal) => runChecker(checker, udid, leaseSignal, localLease), record, {
       async arm(proof, signal) {
-        const launchd = await readSimulatorLaunchdPID(proof.udid, signal);
+        const launchd = await readSimulatorLaunchdPID(proof.udid, signal, {
+          redact: value => value.replace(localLease.cliSecretPattern, '[redacted]'), reportAttempt,
+        });
         signal.throwIfAborted();
         return arm([proof.udid, launchd, proof.input, proof.output]);
       },
       prepareRelease: () => guard?.prepareRelease?.(),
       shutdown: udid => executeCommand('xcrun', ['simctl', 'shutdown', udid], 10_000),
+      reportAttempt,
     });
+  } catch (error) {
+    runFailed = true;
+    throw error;
   } finally {
     process.removeListener('SIGINT', interrupt);
     process.removeListener('SIGTERM', interrupt);
+    let receiptError: unknown;
+    if (localLease && leaseReceipt) {
+      try {
+        mkdirSync(dirname(leaseReceipt), { recursive: true, mode: 0o700 });
+        writeFileSync(leaseReceipt, JSON.stringify({ attempts }, null, 2) + '\n', { mode: 0o600 });
+      } catch (error) {
+        receiptError = error;
+        console.error('Could not write the isolated lease attempt receipt');
+      }
+    }
     if (guard) {
       let mode: string;
       try {
         mode = await guard.finish();
         guard.signal.throwIfAborted();
-      }
-      catch (error) { fail(error); }
+      } catch (error) { fail(error); }
       report(`passed (${mode})`);
     }
+    if (!runFailed && receiptError) throw receiptError;
   }
 }
 
@@ -312,10 +338,10 @@ async function runCommand(command: string, args: string[], signal: AbortSignal,
 
 if (import.meta.main) {
   const [command, ...args] = process.argv.slice(2);
-  if (!command) throw new Error('Usage: simulator-media.ts --check-lease | <hosted command> [args...]');
+  if (!command) throw new Error('Usage: simulator-media.ts --check-lease [receipt] | <hosted command> [args...]');
   if (command === '--check-lease') {
-    if (args.length || isHosted(process.env)) throw new Error('--check-lease requires a local isolated simulator lease');
-    await withSimulatorMediaAudio(async () => {}, { localDestination: 'check-lease' });
+    if (args.length > 1 || isHosted(process.env)) throw new Error('--check-lease requires a local isolated simulator lease');
+    await withSimulatorMediaAudio(async () => {}, { localDestination: 'check-lease', leaseReceipt: args[0] ?? 'isolated-lease.json' });
   } else {
     requireSimulatorMedia();
     await withSimulatorMediaAudio(signal => runCommand(command, args, signal));
