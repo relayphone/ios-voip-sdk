@@ -6,8 +6,8 @@ import { promisify } from 'node:util';
 
 const execute = promisify(execFile);
 /** Keep the publisher/receiver event loop running while simulator commands execute. */
-export async function command(file: string, args: readonly string[], timeout = 120_000): Promise<string> {
-  const { stdout } = await execute(file, args, { encoding: 'utf8', timeout, killSignal: 'SIGKILL' });
+export async function command(file: string, args: readonly string[], timeout = 120_000, signal?: AbortSignal): Promise<string> {
+  const { stdout } = await execute(file, args, { encoding: 'utf8', timeout, killSignal: 'SIGKILL', signal });
   return stdout.trim();
 }
 export async function deadline<T>(milliseconds: number, label: string, operation: () => Promise<T>): Promise<T> {

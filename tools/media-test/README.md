@@ -62,6 +62,10 @@ any emitted phase's marker over their observation interval. An empty capture doe
 
 ## JSON CLI
 
+The CLI requires hosted GitHub Actions because its credentials and controls can drive an iOS
+simulator media fixture. The [running rules](../../docs/media-hook-feasibility.md#running-media-journeys)
+describe the host audio guard and the future isolated lease requirement.
+
 Run these commands from one long-lived journey runner or shell. `start` returns JSON status and
 keeps the service alive until `stop`, runner death, a termination signal or its 180-second safety
 limit. The service watches the invoking runner PID; independent CI steps are separate lifetimes.

@@ -25,6 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: ./.github/actions/setup-simulator
+      - name: Test host audio transport classification
+        run: |
+          perl -e 'alarm 120; exec @ARGV' swift test --package-path tools/media-test/HostAudioGuard \
+            --scratch-path "$RUNNER_TEMP/host-audio-guard-tests" --jobs 2
+      - name: Verify the hosted Core Audio routes
+        run: node tools/media-test/simulator-media.ts /usr/bin/true
       - name: Test the example command protocol
         run: |
           perl -e 'alarm 120; exec @ARGV' swift test --package-path expo/example/client/modules/media-feasibility \
@@ -96,15 +102,29 @@ jobs:
             --skipLibCheck --allowImportingTsExtensions tools/media-test/*.ts
       - name: Check the independent video peer
         run: VIDEO_PEER_INTEGRATION=1 node --test tools/media-test/video-peer.integration.test.ts
-      - name: Boot the media test simulator
+      - name: Run the guarded simulator media tests
         run: |
+          node tools/media-test/simulator-media.ts /bin/bash -euo pipefail <<'BASH'
+          cleanup_simulator() {
+            status=$?
+            if [ -f "$RUNNER_TEMP/media-simulator" ]; then
+              id=$(cat "$RUNNER_TEMP/media-simulator")
+              perl -e 'alarm 120; exec @ARGV' xcrun simctl shutdown "$id" || true
+              if perl -e 'alarm 120; exec @ARGV' xcrun simctl delete "$id"; then
+                rm "$RUNNER_TEMP/media-simulator"
+              else
+                status=1
+              fi
+            fi
+            exit "$status"
+          }
+          trap cleanup_simulator EXIT
+          trap 'exit 143' TERM
+          # Boot the simulator before building the native package tests.
           id=$(perl -e 'alarm 120; exec @ARGV' xcrun simctl create media-feasibility com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro com.apple.CoreSimulator.SimRuntime.iOS-27-2)
           echo "$id" > "$RUNNER_TEMP/media-simulator"
           perl -e 'alarm 120; exec @ARGV' xcrun simctl boot "$id"
           perl -e 'alarm 300; exec @ARGV' xcrun simctl bootstatus "$id" -b
-      - name: Build native package tests
-        run: |
-          id=$(cat "$RUNNER_TEMP/media-simulator")
           (cd MediaTesting && /usr/bin/time -p node "$GITHUB_WORKSPACE/tools/media-test/build-timeout.ts" \
             900 "$RUNNER_TEMP/media-build-diagnostics/native-tests" xcodebuild -showBuildTimingSummary build-for-testing \
             -scheme VoIPMediaTesting -destination "platform=iOS Simulator,id=$id" \
@@ -112,31 +132,31 @@ jobs:
             -clonedSourcePackagesDirPath "$RUNNER_TEMP/media-source-packages" -disableAutomaticPackageResolution -skipPackageUpdates \
             -only-testing:VoIPMediaTestingTests \
             CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO > "$RUNNER_TEMP/media-package-build.log" 2>&1)
-      - name: Run the built native package tests
-        working-directory: ${{ runner.temp }}
-        run: |
-          id=$(cat "$RUNNER_TEMP/media-simulator")
-          shopt -s nullglob
-          test_runs=("$RUNNER_TEMP/media-package/Build/Products/"*.xctestrun)
-          if [ "${#test_runs[@]}" -ne 1 ]; then
-            echo "Expected one native test run specification, found ${#test_runs[@]}" >&2
-            exit 1
-          fi
-          xcrun --sdk iphonesimulator swiftc -swift-version 6 -target arm64-apple-ios26.0-simulator \
-            "$GITHUB_WORKSPACE/tools/media-test/SimulatorTestHost.swift" -o "$RUNNER_TEMP/native-test-host"
-          /usr/bin/time -p node "$GITHUB_WORKSPACE/tools/media-test/run-native-tests.ts" 300 \
-            "$RUNNER_TEMP/media-build-diagnostics/native-tests-run" "$id" "${test_runs[0]}" \
-            "$RUNNER_TEMP/native-test-host" > "$RUNNER_TEMP/media-package-tests.log" 2>&1
-          NATIVE_LAUNCHER_SPEC="${test_runs[0]}" NATIVE_LAUNCHER_SIMULATOR="$id" \
-            NATIVE_LAUNCHER_HOST="$RUNNER_TEMP/native-test-host" \
-            NATIVE_LAUNCHER_DIRECTORY="$RUNNER_TEMP/media-build-diagnostics/launcher-controls" \
-            node --test "$GITHUB_WORKSPACE/tools/media-test/native-test-launcher.integration.test.ts"
-      - name: Check media hooks and continuous silence windows
-        run: |
-          id=$(cat "$RUNNER_TEMP/media-simulator")
+          # Run the native package tests from the temporary directory.
+          (
+            cd "$RUNNER_TEMP"
+            id=$(cat "$RUNNER_TEMP/media-simulator")
+            shopt -s nullglob
+            test_runs=("$RUNNER_TEMP/media-package/Build/Products/"*.xctestrun)
+            if [ "${#test_runs[@]}" -ne 1 ]; then
+              echo "Expected one native test run specification, found ${#test_runs[@]}" >&2
+              exit 1
+            fi
+            xcrun --sdk iphonesimulator swiftc -swift-version 6 -target arm64-apple-ios26.0-simulator \
+              "$GITHUB_WORKSPACE/tools/media-test/SimulatorTestHost.swift" -o "$RUNNER_TEMP/native-test-host"
+            /usr/bin/time -p node "$GITHUB_WORKSPACE/tools/media-test/run-native-tests.ts" 300 \
+              "$RUNNER_TEMP/media-build-diagnostics/native-tests-run" "$id" "${test_runs[0]}" \
+              "$RUNNER_TEMP/native-test-host" > "$RUNNER_TEMP/media-package-tests.log" 2>&1
+            NATIVE_LAUNCHER_SPEC="${test_runs[0]}" NATIVE_LAUNCHER_SIMULATOR="$id" \
+              NATIVE_LAUNCHER_HOST="$RUNNER_TEMP/native-test-host" \
+              NATIVE_LAUNCHER_DIRECTORY="$RUNNER_TEMP/media-build-diagnostics/launcher-controls" \
+              node --test "$GITHUB_WORKSPACE/tools/media-test/native-test-launcher.integration.test.ts"
+          )
+          # Verify the example media hooks and continuous silence windows.
           perl -e 'alarm 300; exec @ARGV' node tools/media-test/feasibility.ts "$id" \
             "$RUNNER_TEMP/media-build/Build/Products/Debug-iphonesimulator/VoIPExample.app" \
             "$RUNNER_TEMP/media-result-synthetic.json"
+          BASH
       - name: Upload build timeout diagnostics
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -153,7 +173,7 @@ jobs:
             perl -e 'alarm 120; exec @ARGV' xcrun simctl shutdown "$id" || true
             perl -e 'alarm 120; exec @ARGV' xcrun simctl delete "$id"
           fi
-          rm -rf "$RUNNER_TEMP/media-build" "$RUNNER_TEMP/media-package" "$RUNNER_TEMP/media-source-packages" "$RUNNER_TEMP/media-example-source-packages" "$RUNNER_TEMP/media-journey-protocol"
+          rm -rf "$RUNNER_TEMP/media-build" "$RUNNER_TEMP/media-package" "$RUNNER_TEMP/media-source-packages" "$RUNNER_TEMP/media-example-source-packages" "$RUNNER_TEMP/media-journey-protocol" "$RUNNER_TEMP/host-audio-guard-tests"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:

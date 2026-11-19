@@ -9,10 +9,17 @@ WebRTC **150.7871.04**. The Expo example uses native LiveKit through `NativeCall
 not install the React Native WebRTC provider alongside it.
 
 `MarkerAudioEngine` installs after LiveKit's session/mixer observers before room creation.
-It replaces hardware capture with the shared 12-slot `tones-v2` source at `engineWillConnectInput`, without enabling
-the audio session. `DecodedAudioProbe.attach(to:)` observes the actual remote track.
-The output observer inserts a unity-gain meter **after** the ordinary engine's main mixer and
-before its output node. It does not use manual rendering or the decoder as output evidence.
+
+- For capture, `engineWillConnectInput` feeds the shared 12-slot `tones-v2` source into WebRTC's
+  input mixer. A zero-gain branch from the simulator's input node clocks WebRTC's
+  `AVAudioSinkNode`, which delivers the mixed PCM to the outgoing track. The marker supplies
+  the captured signal, and the clock branch still opens the simulator input device.
+  [Pinned WebRTC input graph](https://github.com/webrtc-sdk/webrtc/blob/a545de45259b47dfac5f3635863e47cb601f1bb2/modules/audio_device/audio_engine_device.mm#L2646-L2729)
+- For playout, WebRTC feeds mixed remote PCM into the engine's main mixer, where LiveKit
+  applies `mixer.outputVolume`. The fixture's unity-gain meter sits between that mixer and
+  `AVAudioOutputNode`. `DecodedAudioProbe.attach(to:)` separately observes the remote track
+  before the mixer, so it can verify that decoded audio continues while mixer output is silent.
+  [Pinned WebRTC output graph](https://github.com/webrtc-sdk/webrtc/blob/a545de45259b47dfac5f3635863e47cb601f1bb2/modules/audio_device/audio_engine_device.mm#L2460-L2516) · [Pinned LiveKit mixer](https://github.com/livekit/client-sdk-swift/blob/43c1c0870e51eedbfd95b20b1b5c43a767886786/Sources/LiveKit/Audio/MixerEngineObserver.swift#L235-L245)
 
 The example first uses `AudioManager.setEngineAvailability(.none)`, prepares the room, then
 enables its engine only through `CallMedia.activate()`. The check requires a stopped engine and
@@ -39,6 +46,58 @@ is not indexed on CocoaPods trunk.
 This qualifies software capture, publication and post-mixer PCM. It does not establish physical
 microphone/speaker operation, Bluetooth routing or acoustic latency. The shared TypeScript
 contract and reusable host fixture are separate changes.
+
+### Device-free simulator playout
+
+An in-memory destination would attach after the fixture meter, in place of the connection to
+the device-backed `AVAudioOutputNode`. A manual render loop would pull the same decoded PCM
+through LiveKit's mixer and the existing meter into memory. Capture would need a device-free
+clock for the existing marker while retaining the publication gate.
+
+The pinned SDK exposes the real output mixer through `engineWillConnectOutput` in device mode.
+Its manual mode supplies only a capture engine. WebRTC pulls remote PCM and discards it without
+passing it to that mixer or calling the output hook. The remote track renderer and mixed-remote
+renderer observe PCM upstream of the output-volume gate.
+[Pinned WebRTC manual render loop](https://github.com/webrtc-sdk/webrtc/blob/a545de45259b47dfac5f3635863e47cb601f1bb2/modules/audio_device/audio_engine_device.mm#L3117-L3151) · [Pinned LiveKit renderer](https://github.com/livekit/client-sdk-swift/blob/43c1c0870e51eedbfd95b20b1b5c43a767886786/Sources/LiveKit/Audio/Manager/AudioManager.swift#L584-L594)
+
+Switching the device-mode engine to Apple's manual rendering also disconnects its input.
+WebRTC delivers capture through an `AVAudioSinkNode`, which Apple supports only in the
+device-mode input chain. The public hooks expose node connections and lifecycle events.
+They supply neither a replacement for that capture delivery path nor a manual playout
+destination on the real output mixer.
+[Apple AVAudioEngine manual rendering](https://developer.apple.com/documentation/avfaudio/avaudioenginemanualrenderingmode) · [Apple AVAudioSinkNode](https://developer.apple.com/documentation/avfaudio/avaudiosinknode)
+
+### Running media journeys
+
+Run simulator media and video journeys on hosted GitHub Actions. The fixture uses the simulator's
+audio devices, which can activate the speakers and microphone on a local Mac. The runners
+refuse local and self-hosted starts before setup. Hosted admission requires `GITHUB_ACTIONS=true`
+and `RUNNER_ENVIRONMENT=github-hosted`. The Core Audio guard checks the default input and output
+before boot. Each hosted default device must be named Apple Virtual Sound Device and report
+either `AVIODevice` or `AVIODevice 2`. The two UIDs can swap directions between runs. The guard
+logs a model UID when available. Hosted guest devices can report a built-in
+transport. Unknown transports, hardware aggregate members, and route changes fail the run.
+The job summary lists each running device's
+name, UID, transport, and verdict. A runner with no default devices reports `no host devices`.
+
+Wrap each simulator journey in one call to `withSimulatorMediaAudio` from
+`tools/media-test/simulator-media.ts`.
+
+```ts
+import { withSimulatorMediaAudio } from './simulator-media.ts';
+
+await withSimulatorMediaAudio(signal => runJourney(signal));
+```
+
+Start simulator setup inside the callback, pass its abort signal to commands and waits, and
+finish simulator cleanup before the callback returns. The wrapper checks admission before
+invoking the callback and keeps the guard active until cleanup finishes.
+
+The future simulator lease adapter must verify `audio.isolated` and prove that the simulator uses
+its own virtual input and output devices. The local `SimulatorLeaseAudio` type names these
+checks `isolated`, `virtualInputVerified`, and `virtualOutputVerified`. The adapter will map
+them once the lease format is available. The current preflight refuses all local lease runs
+until that adapter ships. Approved lease runs will use the same Core Audio guard.
 
 ## Marker qualification
 

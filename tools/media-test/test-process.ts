@@ -100,8 +100,10 @@ const kill = (pid: number) => {
 export async function runTestProcess(options: {
   command: string; args: string[]; timeoutMS: number; env?: NodeJS.ProcessEnv;
   secrets?: string[]; outputLimit?: number; readiness?: TestProcessReadiness;
+  abortSignal?: AbortSignal;
   onGroupInspection?: (inspection: ProcessGroupInspection) => void;
 }): Promise<TestProcessResult> {
+  options.abortSignal?.throwIfAborted();
   if (!Number.isSafeInteger(options.timeoutMS) || options.timeoutMS <= 0) throw new Error('Invalid test timeout');
   const limit = options.outputLimit ?? 16 * 1024 * 1024;
   if (!Number.isSafeInteger(limit) || limit <= 0) throw new Error('Invalid output limit');
@@ -181,9 +183,11 @@ export async function runTestProcess(options: {
     child.once('close', finish);
     const interrupt = () => terminate('interrupted');
     process.once('SIGINT', interrupt); process.once('SIGTERM', interrupt);
+    options.abortSignal?.addEventListener('abort', interrupt, { once: true });
     cleanup = () => {
       clearTimeout(timer); clearTimeout(fallback);
       process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', interrupt);
+      options.abortSignal?.removeEventListener('abort', interrupt);
     };
   });
   let processElapsedMS: number;

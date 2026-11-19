@@ -126,6 +126,17 @@ test('interruption kills the owned test instead of accepting prior success outpu
   } finally { clearTimeout(timer); }
 });
 
+test('an audio guard trip interrupts the test and cleans up its process group', async () => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 150);
+  try {
+    const result = await run(passed + 'setInterval(()=>{},1000)', 2000, { abortSignal: controller.signal });
+    assert.equal(result.reason, 'interrupted');
+    assert.equal(result.clean, true);
+    assert.equal(nativeTestSucceeded(result), false);
+  } finally { clearTimeout(timer); }
+});
+
 test('split UTF-8 output preserves the native test verdict', async () => {
   const result = await run(`process.stdout.write(Buffer.from([0xe2]));
     setTimeout(()=>{process.stdout.write(Buffer.from([0x9c,0x94]));
