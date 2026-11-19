@@ -57,6 +57,15 @@
     private var systemUUIDs: [CallID: UUID] = [:]
     /// The starts and joins the app requested, until the system asks the SDK to perform them.
     private var requested: [UUID: (id: UUID, action: Action)] = [:]
+    private struct PendingStart {
+      enum Submission { case submitting, endedWhileSubmitting, accepted }
+      let completion: @VoIPActor (Result<ActionID, ActionError>) -> Void
+      var submission = Submission.submitting
+    }
+    private var pendingStarts: [ActionID: PendingStart] = [:]
+    /// Identifies app requests even if the platform delivers an action after its setup failed.
+    private var issuedStarts: [ActionID: Date] = [:]
+    private var resetGeneration = 0
     /// The incoming reports the system hasn't answered.
     private var reporting: [UUID: UUID] = [:]
     /// Ends to report once the system has answered the call's report.
@@ -239,6 +248,49 @@
       }
     }
 
+    /// Completes when LiveCommunicationKit performs the matching Start action or refuses it.
+    public func requestStart(
+      _ outgoing: OutgoingCall, for call: Call,
+      completion: @escaping @VoIPActor (Result<ActionID, ActionError>) -> Void
+    ) {
+      guard let manager else { return completion(.failure(.refused(nil))) }
+      let uuid = uuid(for: outgoing.id)
+      let generation = resetGeneration
+      Task { [weak self] in
+        guard let self, resetGeneration == generation else {
+          return completion(.failure(.refused(nil)))
+        }
+        let action = StartConversationAction(
+          conversationUUID: uuid, handles: call.parties.systemHandles, isVideo: call.hasVideo)
+        let id = ActionID(rawValue: action.uuid)
+        let now = Date.now
+        issuedStarts = issuedStarts.filter { $0.value > now }
+        issuedStarts[id] = action.timeoutDate
+        pendingStarts[id] = PendingStart(completion: completion)
+        do {
+          try await manager.perform(action)
+          guard let start = pendingStarts[id] else { return }
+          if start.submission == .endedWhileSubmitting {
+            pendingStarts.removeValue(forKey: id)?.completion(.failure(.refused(nil)))
+          } else {
+            pendingStarts[id]?.submission = .accepted
+          }
+        } catch {
+          guard let start = pendingStarts.removeValue(forKey: id) else { return }
+          let detail = FrameworkError(error)
+          start.completion(.failure(.refused(detail)))
+          Self.log.error("The system refused a start: \(detail, privacy: .public)")
+        }
+      }
+    }
+
+    /// Removes the conversation that belongs to the late native Start action.
+    public func removeLateStart(_ action: ActionID, for id: CallID, reason: EndReason) {
+      guard let bridge else { return }
+      Task { @MainActor in bridge.removeLateStart(action, reason: Conversation.EndedReason(reason))
+      }
+    }
+
     /// Fulfils an action the system asked the SDK to perform.
     public func fulfill(_ id: ActionID) {
       complete(id, fulfilled: true)
@@ -323,6 +375,14 @@
       guard let onEvent else { return }
       switch event {
       case .perform(let id, let systemAction):
+        if let start = pendingStarts[id] {
+          guard start.submission != .endedWhileSubmitting else {
+            return complete(id, fulfilled: false)
+          }
+          pendingStarts.removeValue(forKey: id)?.completion(.success(id))
+          return
+        }
+        if issuedStarts[id] != nil { return complete(id, fulfilled: false) }
         if case .end = systemAction, localRemovals.removeValue(forKey: id) != nil {
           return complete(id, fulfilled: true)
         }
@@ -331,13 +391,34 @@
         }
         onEvent(.perform(id, action))
       case .actionTimedOut(let id):
-        if localRemovals[id] != nil { finishLocalRemoval(id) } else { onEvent(.actionTimedOut(id)) }
+        if pendingStarts[id] != nil {
+          startEnded(id)
+        } else if localRemovals[id] != nil {
+          finishLocalRemoval(id)
+        } else {
+          onEvent(.actionTimedOut(id))
+        }
+      case .startEnded(let id): startEnded(id)
       case .audioActivated: onEvent(.audioActivated)
       case .audioDeactivated: onEvent(.audioDeactivated)
       case .reset:
+        resetGeneration += 1
+        let starts = Array(pendingStarts.values)
+        pendingStarts.removeAll()
         requested.removeAll()
         localRemovals.removeAll()
         onEvent(.reset)
+        for start in starts { start.completion(.failure(.refused(nil))) }
+      }
+    }
+
+    private func startEnded(_ id: ActionID) {
+      guard let start = pendingStarts[id] else { return }
+      if start.submission == .accepted {
+        pendingStarts.removeValue(forKey: id)?.completion(.failure(.refused(nil)))
+      } else {
+        // A refusal from the outstanding request can still carry a native diagnostic.
+        pendingStarts[id]?.submission = .endedWhileSubmitting
       }
     }
 

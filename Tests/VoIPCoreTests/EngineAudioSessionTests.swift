@@ -32,10 +32,10 @@ extension EngineTests {
     @Test func configuresTheSessionForAnOutgoingCallOnceItIsPlaced() async throws {
       let h = try Harness()
       let video = OutgoingCall(id: callID, parties: [alice], hasVideo: true)
-      try await h.client.request(.start(video))
-      #expect(try await h.next() == .startRequested(callID))
+      let request = try await h.beginStart(video)
       #expect(await h.audio.configuredCalls.isEmpty)
       await h.client.confirmPlaced(callID)
+      try await request.value
       #expect(try await h.next() == .performed(.start(video), .dialing))
       #expect(await h.audio.configuredCalls.map(\.hasVideo) == [true])
     }

@@ -618,7 +618,10 @@ final class CallService {
       try await client.request(action)
     } catch {
       requested.withdraw(action)
-      // The calling framework may refuse a start that the module already failed.
+      if case .start = action, case .refused = error { throw CommandError(error) }
+      if case .start = action, case .notAllowed(.ended(.failed)) = error {
+        throw waiter.failure ?? .failedBeforePerformance
+      }
       throw waiter.failure ?? CommandError(error)
     }
     try await waiter.wait()

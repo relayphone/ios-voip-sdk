@@ -40,6 +40,7 @@
   enum SystemEvent: Sendable {
     case perform(ActionID, SystemAction)
     case actionTimedOut(ActionID)
+    case startEnded(ActionID)
     case audioActivated
     case audioDeactivated
     case reset
@@ -85,6 +86,8 @@
     private let send: @Sendable (SystemEvent) -> Void
     /// The actions the SDK hasn't completed, by action UUID.
     private var actions: [UUID: ConversationAction] = [:]
+    /// The native conversation instance associated with each pending Start.
+    private var startConversations: [ActionID: Conversation] = [:]
     /// Whether each conversation is muted, as of the last mute the SDK fulfilled.
     private var muted: [UUID: Bool] = [:]
 
@@ -95,12 +98,25 @@
 
     /// Completes an action the system asked the SDK to perform.
     func complete(_ id: ActionID, fulfilled: Bool) {
+      startConversations[id] = nil
       guard let action = actions.removeValue(forKey: id.rawValue) else { return }
       guard fulfilled else { return action.fail() }
       if let mute = action as? MuteConversationAction {
         muted[mute.conversationUUID] = mute.isMuted
       }
       action.fulfill()
+    }
+
+    /// Rejects this Start and removes its conversation if the system still presents it.
+    func removeLateStart(_ id: ActionID, reason: Conversation.EndedReason) {
+      let conversation = startConversations[id]
+      complete(id, fulfilled: false)
+      let manager = manager.onMain
+      if let conversation, conversation.state != .left,
+        manager.conversations.contains(where: { $0 === conversation })
+      {
+        manager.reportConversationEvent(.conversationEnded(.now, reason), for: conversation)
+      }
     }
 
     /// Tells the system about a change to a conversation it presents.
@@ -141,8 +157,20 @@
     func conversationManager(
       _ manager: ConversationManager, conversationChanged conversation: Conversation
     ) {
-      // The SDK keeps every call's state itself.
-      if conversation.state == .left { muted[conversation.uuid] = nil }
+      if conversation.state == .left {
+        muted[conversation.uuid] = nil
+        let starts = startConversations.filter { $0.value === conversation }.keys
+        for id in starts {
+          startConversations[id] = nil
+          send(.startEnded(id))
+        }
+      } else {
+        for action in manager.pendingConversationActions(
+          of: StartConversationAction.self, for: conversation)
+        {
+          startConversations[ActionID(rawValue: action.uuid)] = conversation
+        }
+      }
     }
 
     func conversationManagerDidBegin(_ manager: ConversationManager) {}
@@ -150,25 +178,36 @@
     func conversationManagerDidReset(_ manager: ConversationManager) {
       // The system abandoned every action it was waiting for.
       actions.removeAll()
+      startConversations.removeAll()
       muted.removeAll()
       send(.reset)
     }
 
     func conversationManager(_ manager: ConversationManager, perform action: ConversationAction) {
-      guard action.state == .idle || action.state == .running else { return }
+      let id = ActionID(rawValue: action.uuid)
+      guard action.state == .idle || action.state == .running else {
+        if action is StartConversationAction { send(.startEnded(id)) }
+        return
+      }
       if let mute = action as? MuteConversationAction, changesNothing(mute) {
         return action.fulfill()
       }
       guard let value = SystemAction(action) else { return action.fail() }
       actions[action.uuid] = action
-      send(.perform(ActionID(rawValue: action.uuid), value))
+      if action is StartConversationAction {
+        startConversations[id] = manager.conversations.first { $0.uuid == action.conversationUUID }
+      }
+      send(.perform(id, value))
     }
 
     func conversationManager(
       _ manager: ConversationManager, timedOutPerforming action: ConversationAction
     ) {
-      guard actions.removeValue(forKey: action.uuid) != nil else { return }
-      send(.actionTimedOut(ActionID(rawValue: action.uuid)))
+      guard actions.removeValue(forKey: action.uuid) != nil || action is StartConversationAction
+      else { return }
+      let id = ActionID(rawValue: action.uuid)
+      startConversations[id] = nil
+      send(.actionTimedOut(id))
     }
 
     func conversationManager(

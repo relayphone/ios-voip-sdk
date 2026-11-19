@@ -32,15 +32,13 @@ extension EngineTests {
         #expect(await h.reported() == [.report(callID), .ended(callID, .unanswered)])
 
       case .placementOfStart:
-        try await h.client.request(.start(outgoing))
-        #expect(try await h.next() == .startRequested(callID))
-        let start = try await h.lastActionID()
+        let request = try await h.beginStart(outgoing)
         h.clock.advance(by: deadlines.placement)
         #expect(try await h.next() == .ended(callID, .failed(.notPlaced)))
-        #expect(
-          await h.records.suffix(2) == [
-            .fail(start), .reportEnded(callID, .failed(.notPlaced)),
-          ])
+        await #expect(throws: ActionError.notAllowed(.ended(.failed(.notPlaced)))) {
+          try await request.value
+        }
+        #expect(await h.records.isEmpty)
 
       case .placementOfJoin:
         _ = await h.client.report(incoming(callID, .preview))

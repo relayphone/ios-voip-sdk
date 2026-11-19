@@ -32,9 +32,10 @@ private struct InvariantChecker {
 
     // Every framework action is settled exactly once, and only the held one waits.
     if case .performed(let id, _) = event { performed.insert(id) }
+    if case .startAdmitted(_, let id, _) = event { performed.insert(id) }
     for effect in effects {
       switch effect {
-      case .fulfill(let id), .fail(let id): settle(id, sourceLocation)
+      case .fulfill(let id), .fail(let id), .removeLateStart(let id, _): settle(id, sourceLocation)
       default: break
       }
     }
@@ -90,6 +91,12 @@ private struct InvariantChecker {
       case .frameworkReset:
         expected.admissionAttempt = nil
         expected.removeAfterAdmission = false
+        expected.startAttempt = nil
+      case .startAdmitted(let attempt, let id, _) where before.startAttempt == attempt:
+        if case .ended(let reason) = before.phase {
+          permittedEffects = [.removeLateStart(id, reason == .unanswered ? .endedRemotely : reason)]
+        }
+        expected.startAttempt = nil
       default: break
       }
       #expect(
@@ -143,8 +150,8 @@ private struct InvariantChecker {
 private func allowedDeadlines(_ phase: Phase) -> Set<Deadline> {
   switch phase {
   case .ringing: [.ring]
-  case .requesting, .placing: [.placement]
-  case .preparing: [.mediaPreparation]
+  case .requesting, .placing, .placingStart: [.placement]
+  case .preparing, .preparingStart: [.mediaPreparation]
   case .dialing: [.ring, .audioActivation, .audioRecovery]
   case .connecting: [.connect, .audioActivation, .audioRecovery]
   case .connected: [.audioActivation, .audioRecovery]
@@ -156,7 +163,7 @@ private func allowedDeadlines(_ phase: Phase) -> Set<Deadline> {
 private func isGrouped(_ effects: [Effect]) -> Bool {
   let groups = effects.map { effect in
     switch effect {
-    case .fulfill, .fail: 0
+    case .fulfill, .fail, .settleStart, .removeLateStart: 0
     case .arm, .disarm: 1
     case .emit: 3
     default: 2
@@ -175,8 +182,8 @@ extension Effect {
 
   fileprivate var involvesFramework: Bool {
     switch self {
-    case .reportIncoming, .request, .fulfill, .update, .reportOutgoing, .reportEnded,
-      .prepareMedia:
+    case .reportIncoming, .request, .requestStart, .fulfill, .update, .reportOutgoing, .reportEnded,
+      .removeLateStart, .prepareMedia:
       true
     default:
       false
@@ -217,7 +224,11 @@ private struct EventSource {
     case 16: return .audioInterruptionEnded
     case 17: return .mediaServicesReset
     case 18: return .notPlaced
-    default: return .server(pick([.connecting, .connected]))
+    default:
+      if let attempt = state.startAttempt, state.awaitsNativeStart || state.phase.isEnded {
+        return .startAdmitted(attempt, freshAction(), outgoing)
+      }
+      return .server(pick([.connecting, .connected]))
     }
   }
 

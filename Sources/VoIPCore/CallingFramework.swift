@@ -41,7 +41,7 @@ public protocol CallingFramework: Sendable {
   /// Asks the system to perform an action that the app requested.
   ///
   /// When the system accepts, it asks the SDK to perform the action with
-  /// ``FrameworkEvent/perform(_:_:)``.
+  /// ``FrameworkEvent/perform(_:_:)``. App-originated Start uses ``requestStart(_:for:completion:)``.
   ///
   /// - Parameters:
   ///   - action: The action the app requested.
@@ -50,6 +50,23 @@ public protocol CallingFramework: Sendable {
   /// - Throws: ``ActionError/refused(_:)`` with the system's error when the system refuses the
   ///   action, or ``ActionError/unknownCall`` when the system doesn't know the call.
   func request(_ action: Action, for call: Call) async throws(ActionError)
+
+  /// Opens a native session for an app-originated outgoing call after placement.
+  ///
+  /// - Parameters:
+  ///   - outgoing: The original Start request.
+  ///   - call: The placed call, including any updated details.
+  ///   - completion: Called once when the system performs this exact Start or when setup
+  ///     fails. Return its action ID on performance and use ``ActionError/refused(_:)`` for
+  ///     failure, with the native diagnostic if available. Deliver performance here so the
+  ///     SDK can settle the platform action via ``fulfill(_:)`` or ``fail(_:)``.
+  func requestStart(
+    _ outgoing: OutgoingCall, for call: Call,
+    completion: @escaping @VoIPActor (Result<ActionID, ActionError>) -> Void)
+
+  /// Removes a native Start that the system performed after the SDK ended the call.
+  /// Implementations that queue removal should scope it to the given native action.
+  func removeLateStart(_ action: ActionID, for id: CallID, reason: EndReason)
 
   /// Completes an action the system asked the SDK to perform.
   ///
@@ -110,6 +127,12 @@ public enum FrameworkEvent: Hashable, Sendable {
 extension CallingFramework {
   /// Swift calling frameworks represent iOS by default.
   public var platform: SystemFailure.Platform { .ios }
+
+  /// Fails the platform action and reports the call's retained end.
+  public func removeLateStart(_ action: ActionID, for id: CallID, reason: EndReason) {
+    fail(action)
+    reportEnded(id, reason: reason)
+  }
 
   /// Custom adapters opt into mid-call video explicitly.
   public var supportsVideoChanges: Bool { false }

@@ -33,14 +33,13 @@ extension CallMachine {
         return nil
       }
     case .outgoing(let outgoing):
-      let action = Action.start(outgoing)
       var step = Step(
-        call: Call(outgoing), phase: .requesting(action),
+        call: Call(outgoing), phase: .placingStart(outgoing),
         policy: configuration.presentationPolicy, configuration: configuration,
         now: now)
       step.state.startAttempt = attempt
       step.arm(.placement)
-      step.output(.request(action))
+      step.emit(.startRequested(step.state.call))
       return step.result
     case .joining(let incoming):
       let call = Call(
@@ -118,6 +117,7 @@ private struct Step {
     switch event {
     case .reportCompleted(let outcome): reportCompleted(outcome)
     case .admissionFailed(let attempt, let failure): admissionFailed(attempt, failure)
+    case .startAdmitted(let attempt, let id, let outgoing): startAdmitted(attempt, id, outgoing)
     case .startFailed(let attempt, let failure): startFailed(attempt, failure)
     case .performed(let id, let action): perform(id, action)
     case .actionTimedOut(let id):
@@ -188,11 +188,58 @@ private struct Step {
 
   private mutating func startFailed(_ attempt: CallMachine.AttemptID, _ failure: SystemFailure) {
     guard state.startAttempt == attempt else { return }
+    state.startAttempt = nil
     switch state.phase {
-    case .requesting(.start), .placing, .preparing, .dialing:
+    case .placingStart, .preparingStart, .dialing:
+      let detail: FrameworkError? =
+        if case .framework(let detail) = failure.diagnostic { detail } else { nil }
+      settlements.append(.settleStart(attempt, .refused(detail)))
       end(.failed(.systemFailed(failure)), reportingEnd: false)
     default: break
     }
+  }
+
+  private mutating func startAdmitted(
+    _ attempt: CallMachine.AttemptID, _ id: ActionID, _ outgoing: OutgoingCall
+  ) {
+    guard state.startAttempt == attempt, state.awaitsNativeStart || state.phase.isEnded else {
+      return fail(id)
+    }
+    state.startAttempt = nil
+    if case .ended(let reason) = state.phase {
+      let systemReason: EndReason = reason == .unanswered ? .endedRemotely : reason
+      settlements.append(.removeLateStart(id, systemReason))
+      return
+    }
+    fulfill(id)
+    settlements.append(.settleStart(attempt, nil))
+    state.startedHere = true
+    if state.deferredMedia == nil { arm(.audioActivation) }
+    output(.reportOutgoing(state.call.id, connected: false))
+    if state.earlyProgress == .connecting, !state.startProgress.contains(.connected) {
+      server(.connecting)
+    }
+    state.earlyProgress = nil
+    let progress = state.startProgress
+    state.startProgress.removeAll()
+    for event in progress {
+      switch event {
+      case .connected: server(.connected)
+      case .provideMedia: provideMedia()
+      }
+    }
+    emit(.performed(.start(outgoing), state.call))
+  }
+
+  private mutating func openNativeStart(_ outgoing: OutgoingCall) {
+    guard let attempt = state.startAttempt else { return }
+    enter(.dialing)
+    arm(.ring)
+    output(.requestStart(attempt, outgoing, state.call))
+  }
+
+  private mutating func bufferStartProgress(_ progress: CallMachine.StartProgress) {
+    if !state.startProgress.contains(progress) { state.startProgress.append(progress) }
   }
 
   private mutating func perform(_ id: ActionID, _ action: Action) {
@@ -204,28 +251,28 @@ private struct Step {
       enter(.preparing(CallMachine.HeldAction(id: id, action: action)))
       arm(.mediaPreparation)
       output(.prepareMedia(state.call))
-    case (.requesting(let requested), .start), (.requesting(let requested), .join):
-      guard requested.isStart == action.isStart, requested.callID == action.callID else {
-        return fail(id)
-      }
+    case (.requesting(let requested), .join) where requested == action:
       enter(.placing(CallMachine.HeldAction(id: id, action: action)))
-      emit(action.isStart ? .startRequested(state.call) : .joinRequested(state.call))
+      emit(.joinRequested(state.call))
     case (_, .end) where state.endResult == nil && !state.phase.isPreviewing:
       endLocally(state.endReceipt(for: id), fulfilling: id)
     case (_, .hold(_, let onHold))
-    where state.phase.isActive && capabilities.contains(.holding):
+    where state.phase.isActive && !state.awaitsNativeStart && capabilities.contains(.holding):
       fulfill(id)
       state.call.isOnHold = onHold
       // A call on hold doesn't wait for audio.
       if onHold { disarm(.audioRecovery) }
       emit(.performed(action, state.call))
-    case (_, .mute(_, let muted)) where state.phase.isActive:
+    case (_, .mute(_, let muted)) where state.phase.isActive && !state.awaitsNativeStart:
       fulfill(id)
       state.call.isMuted = muted
       emit(.performed(action, state.call))
-    case (_, .playTones) where state.phase.isActive && capabilities.contains(.playingTones),
-      (_, .merge) where state.phase.isActive && capabilities.contains(.merging),
-      (_, .unmerge) where state.phase.isActive && capabilities.contains(.merging):
+    case (_, .playTones)
+    where state.phase.isActive && !state.awaitsNativeStart && capabilities.contains(.playingTones),
+      (_, .merge)
+    where state.phase.isActive && !state.awaitsNativeStart && capabilities.contains(.merging),
+      (_, .unmerge)
+    where state.phase.isActive && !state.awaitsNativeStart && capabilities.contains(.merging):
       fulfill(id)
       emit(.performed(action, state.call))
     default:
@@ -255,10 +302,14 @@ private struct Step {
         default: .merging
         }
       guard capabilities.contains(needed) else { return reject(action, .unsupported) }
-      guard phase.isActive else { return reject(action, .notAllowed(state.call.status)) }
+      guard phase.isActive, !state.awaitsNativeStart else {
+        return reject(action, .notAllowed(state.call.status))
+      }
       output(.request(action))
     case .mute:
-      guard phase.isActive else { return reject(action, .notAllowed(state.call.status)) }
+      guard phase.isActive, !state.awaitsNativeStart else {
+        return reject(action, .notAllowed(state.call.status))
+      }
       output(.request(action))
     }
   }
@@ -270,6 +321,18 @@ private struct Step {
   }
 
   private mutating func placed() {
+    if case .placingStart(let outgoing) = state.phase {
+      disarm(.placement)
+      if configuration.outgoingMedia == .whenProvided {
+        state.deferredMedia = .unprovided
+        openNativeStart(outgoing)
+      } else {
+        enter(.preparingStart(outgoing))
+        arm(.mediaPreparation)
+        output(.prepareMedia(state.call))
+      }
+      return
+    }
     guard case .placing(let held) = state.phase else { return }
     disarm(.placement)
     if held.action.isStart && configuration.outgoingMedia == .whenProvided {
@@ -293,6 +356,10 @@ private struct Step {
     guard state.deferredMedia == .unprovided,
       state.phase == .dialing || state.phase == .connecting
     else { return }
+    if state.awaitsNativeStart {
+      bufferStartProgress(.provideMedia)
+      return
+    }
     state.deferredMedia = .preparing
     arm(.mediaPreparation)
     output(.prepareMedia(state.call))
@@ -301,12 +368,17 @@ private struct Step {
   /// The app couldn't place the call, which fails as when the placement deadline passes.
   private mutating func notPlaced() {
     switch state.phase {
-    case .requesting, .placing: abandon(.notPlaced)
+    case .requesting, .placing, .placingStart: abandon(.notPlaced)
     default: break
     }
   }
 
   private mutating func mediaPrepared() {
+    if case .preparingStart(let outgoing) = state.phase {
+      disarm(.mediaPreparation)
+      openNativeStart(outgoing)
+      return
+    }
     if state.deferredMedia == .preparing {
       state.deferredMedia = .prepared
       disarm(.mediaPreparation)
@@ -347,16 +419,20 @@ private struct Step {
       // Deferred outgoing calls keep their no-answer timer until an explicit connected report.
       if !state.call.isIncoming && configuration.outgoingMedia == .whenProvided { return }
       switch phase {
-      case .dialing:
+      case .dialing where !state.awaitsNativeStart:
         disarm(.ring)
         enter(.connecting)
         arm(.connect)
-      case .placing, .preparing:
+      case .placing, .preparing, .placingStart, .preparingStart:
         state.earlyProgress = state.earlyProgress ?? .connecting
       default:
         break
       }
     case .connected:
+      if state.startAttempt != nil && !phase.isEnded {
+        bufferStartProgress(.connected)
+        return
+      }
       if state.deferredMedia != nil && (phase == .dialing || phase == .connecting) {
         connectDeferredOutgoing()
         return
@@ -438,7 +514,7 @@ private struct Step {
   /// media services reset while it took part.
   private mutating func audioConfigurationFailed() {
     switch state.phase {
-    case .preparing: abandon(.audioSession)
+    case .preparing, .preparingStart: abandon(.audioSession)
     case let phase where phase.isTakingPart: end(.failed(.audioSession), reportingEnd: true)
     default: break
     }
@@ -448,7 +524,8 @@ private struct Step {
   /// reset. A call that takes part and isn't on hold waits for it until the recovery deadline,
   /// unless it still waits for its first activation.
   private mutating func awaitAudioRecovery() {
-    guard state.phase.isTakingPart, !state.call.isOnHold, state.armed[.audioActivation] == nil,
+    guard state.phase.isTakingPart, !state.awaitsNativeStart, !state.call.isOnHold,
+      state.armed[.audioActivation] == nil,
       state.deferredMedia == nil || state.deferredMedia == .prepared
     else { return }
     arm(.audioRecovery)
@@ -467,6 +544,7 @@ private struct Step {
     default:
       end(.failed(.frameworkReset), reportingEnd: false)
     }
+    state.startAttempt = nil
   }
 
   // MARK: Outcomes
@@ -534,10 +612,16 @@ private struct Step {
     performed action: Action? = nil
   ) {
     if let held = state.phase.held { fail(held.id) }
+    let startAttempt = state.startAttempt
+    if let startAttempt {
+      settlements.append(.settleStart(startAttempt, .notAllowed(.ended(reason))))
+      if !state.awaitsNativeStart { state.startAttempt = nil }
+    }
     if let endAction { fulfill(endAction) }
     disarmAll()
-    if reportingEnd { output(.reportEnded(state.call.id, reason)) }
+    if reportingEnd, startAttempt == nil { output(.reportEnded(state.call.id, reason)) }
     state.earlyProgress = nil
+    state.startProgress.removeAll()
     state.deferredMedia = nil
     enter(.ended(reason))
     if let action { emit(.performed(action, state.call)) }
@@ -553,10 +637,6 @@ private struct Step {
   // MARK: Effects
 
   private mutating func enter(_ phase: Phase) {
-    switch phase {
-    case .requesting, .placing, .preparing, .dialing: break
-    default: state.startAttempt = nil
-    }
     state.phase = phase
     state.call.status = phase.status
     if case .previewing(let reason) = phase { state.previewReason = reason }
