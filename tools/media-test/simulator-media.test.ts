@@ -5,7 +5,61 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { HostAudioGuardFailure, requireSimulatorMedia, SimulatorMediaRefusal, withSimulatorMediaAudio } from './simulator-media.ts';
+import { HostAudioGuardFailure, readSimulatorLaunchdPID, requireSimulatorMedia, SimulatorMediaRefusal, withSimulatorMediaAudio } from './simulator-media.ts';
+
+test('waits for the leased simulator to boot and retries a transient launchd PID failure', async () => {
+  const calls: string[][] = [];
+  const signal = new AbortController().signal;
+  let time = 0;
+  const pid = await readSimulatorLaunchdPID('leased-simulator', signal, {
+    elapsed: () => time,
+    pause: async ms => { time += ms; },
+    command: async (file, args, timeout, cancellation) => {
+      assert.equal(file, 'xcrun');
+      assert.equal(cancellation, signal);
+      calls.push([...args]);
+      assert.equal(timeout, args[1] === 'bootstatus' ? 75_000 : 5_000);
+      if (calls.length === 1) return '';
+      if (calls.length === 2) throw new Error('launchd is still starting');
+      if (calls.length === 3) return 'pending';
+      return '42';
+    },
+  });
+  const read = ['simctl', 'spawn', 'leased-simulator', 'bin/launchctl', 'managerpid'];
+  assert.deepEqual(calls, [['simctl', 'bootstatus', 'leased-simulator', '-b'], read, read, read]);
+  assert.equal(time, 1_000);
+  assert.equal(pid, '42');
+});
+
+test('refuses a persistent launchd PID failure within the shared readiness deadline', async () => {
+  let time = 0;
+  const timeouts: number[] = [];
+  const failure = new Error('launchd is unavailable');
+  await assert.rejects(readSimulatorLaunchdPID('leased-simulator', new AbortController().signal, {
+    elapsed: () => time,
+    pause: async ms => { time += ms; },
+    command: async (_, args, timeout) => {
+      timeouts.push(timeout!);
+      time += timeout!;
+      if (args[1] === 'bootstatus') return '';
+      throw failure;
+    },
+  }), { message: 'Could not read the isolated simulator launchd PID', cause: failure });
+  assert.deepEqual(timeouts, [75_000, 5_000, 5_000, 4_000]);
+  assert.equal(time, 90_000);
+});
+
+test('refuses an unfinished simulator boot before reading the launchd PID', async () => {
+  const bootTimeout = new Error('bootstatus timed out');
+  const calls: string[] = [];
+  await assert.rejects(readSimulatorLaunchdPID('leased-simulator', new AbortController().signal, {
+    command: async (_, args) => {
+      calls.push(args[1]!);
+      throw bootTimeout;
+    },
+  }), { message: 'The isolated simulator did not finish booting', cause: bootTimeout });
+  assert.deepEqual(calls, ['bootstatus']);
+});
 
 test('local simulator media is refused before the guard or journey starts', async () => {
   const unexpected = async (): Promise<never> => assert.fail('Local simulator setup started');

@@ -4,10 +4,11 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { command as executeCommand, deadline } from './fixture-runtime.ts';
-import { checkerPhaseLog, isolatedLeaseConfiguration, withIsolatedSimulatorLease, type LeaseConfiguration } from './isolated-simulator-lease.ts';
+import { checkerPhaseLog, isolatedLeaseConfiguration, IsolatedLeaseRefusal, withIsolatedSimulatorLease, type LeaseConfiguration } from './isolated-simulator-lease.ts';
 
 /** Evidence mapped from the verified simulator lease. */
 export interface SimulatorLeaseAudio {
@@ -58,6 +59,44 @@ const execute = promisify(execFile);
 const guardSources = ['main.swift', 'AudioTransport.swift', 'LeaseAudioMonitor.swift'].map(
   file => fileURLToPath(new URL(`./HostAudioGuard/Sources/HostAudioGuard/${file}`, import.meta.url)),
 );
+
+export async function readSimulatorLaunchdPID(udid: string, signal: AbortSignal, {
+  command = executeCommand, elapsed = () => performance.now(),
+  pause = (ms, signal) => delay(ms, undefined, { signal }),
+}: {
+  command?: typeof executeCommand; elapsed?: () => number;
+  pause?: (ms: number, signal: AbortSignal) => Promise<void>;
+} = {}): Promise<string> {
+  const deadline = elapsed() + 90_000;
+  signal.throwIfAborted();
+  try {
+    await command('xcrun', ['simctl', 'bootstatus', udid, '-b'], 75_000, signal);
+  } catch (cause) {
+    signal.throwIfAborted();
+    throw new IsolatedLeaseRefusal('The isolated simulator did not finish booting', { cause });
+  }
+
+  let failure: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    signal.throwIfAborted();
+    const remaining = Math.floor(deadline - elapsed());
+    if (remaining < 1) break;
+    try {
+      // Relative paths select the simulator runtime's executable in simctl.
+      const pid = await command('xcrun', ['simctl', 'spawn', udid, 'bin/launchctl', 'managerpid'],
+        Math.min(remaining, 5_000), signal);
+      signal.throwIfAborted();
+      if (/^[1-9]\d*$/.test(pid) && Number(pid) > 1 && Number(pid) <= 0x7fff_ffff) return pid;
+      throw new Error('launchctl managerpid did not return a valid process identifier');
+    } catch (error) {
+      signal.throwIfAborted();
+      failure = error;
+    }
+    if (attempt < 2 && elapsed() + 500 < deadline) await pause(500, signal);
+    else break;
+  }
+  throw new IsolatedLeaseRefusal('Could not read the isolated simulator launchd PID', { cause: failure });
+}
 
 async function startAudioGuard(
   reportDevice: (line: string) => void, env: NodeJS.ProcessEnv, args: string[] = [],
@@ -180,12 +219,7 @@ export async function withSimulatorMediaAudio<T>(
       return run(leaseSignal, simulator, guard?.track);
     }, (checker, udid, leaseSignal) => runChecker(checker, udid, leaseSignal, localLease), record, {
       async arm(proof, signal) {
-        // Relative paths select the simulator runtime's executable in simctl.
-        const launchd = await executeCommand('xcrun', ['simctl', 'spawn', proof.udid, 'bin/launchctl', 'managerpid'],
-          10_000, signal).catch(error => {
-          signal.throwIfAborted();
-          throw new Error('Could not read the isolated simulator launchd PID', { cause: error });
-        });
+        const launchd = await readSimulatorLaunchdPID(proof.udid, signal);
         signal.throwIfAborted();
         return arm([proof.udid, launchd, proof.input, proof.output]);
       },
