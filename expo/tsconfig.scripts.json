@@ -6,7 +6,11 @@
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "lib": ["es2024"],
-    "types": ["node"]
+    "types": ["node"],
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "verbatimModuleSyntax": true
   },
   "include": ["scripts/**/*.mts"]
 }
