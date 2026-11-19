@@ -203,7 +203,8 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
     assert.deepEqual(videoRoute, originalRoute.length === 1 && originalRoute[0] === 'receiver'
       ? ['speaker'] : originalRoute, 'Upgrade did not preserve route ownership');
   }
-  keep('initial-state', { sdk: initial.sdk, audioRoute: originalRoute, videoRoute });
+  keep('initial-state', { sdk: initial.sdk, audioRoute: originalRoute, videoRoute,
+    startup: diagnoseNativeStartup(initial.reply.evidence) });
   let epoch = await startVideo(enabled, initialPeer, 1);
   let live = await freshVideo('first-video', epoch);
   let downgradedBoundary: Parameters<typeof assessJourneyVideo>[5];

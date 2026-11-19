@@ -54,6 +54,48 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
 
   private enum AudioCommand: Sendable { case activate, deactivate, release }
 
+  private final class RoomConnectionTrace: Tracing {
+    struct Step: Encodable {
+      enum Stage: String, Encodable {
+        case webSocketOpened = "ws_open"
+        case joinReceived = "join_recv"
+        case peerConnectionCreated = "pc_created"
+        case offerSent = "offer_sent"
+        case answerSent = "answer_sent"
+        case peerConnectionConnected = "pc_connected"
+        case roomConnected = "room_connected"
+      }
+      let stage: Stage
+      let elapsedMs: Double
+    }
+
+    private let clock: MediaObservationClock
+    private let connect = Synchronization.Mutex<(span: LiveKitClient.Span, atMs: Double)?>(nil)
+    private let cancellation = Synchronization.Mutex<Double?>(nil)
+
+    init(clock: MediaObservationClock) { self.clock = clock }
+
+    func beginSpan(_ name: String) -> LiveKitClient.Span {
+      let span = LiveKitClient.Span(label: name)
+      if name == "connect" { connect.withLock { $0 = (span, clock.milliseconds) } }
+      return span
+    }
+
+    func steps() -> [Step]? {
+      guard let span = connect.withLock({ $0?.span }) else { return nil }
+      return Array(
+        span.entries.lazy.compactMap { entry in
+          Step.Stage(rawValue: entry.label).map {
+            Step(stage: $0, elapsedMs: (entry.time - span.start) * 1000)
+          }
+        }.prefix(16))
+    }
+
+    var beganAtMs: Double? { connect.withLock { $0?.atMs } }
+    func cancel(atMs: Double) { cancellation.withLock { $0 = atMs } }
+    var cancelledAtMs: Double? { cancellation.withLock { $0 } }
+  }
+
   @VoIPActor
   private final class RoomMedia: CallMedia {
     let bridge: NativeRoom
@@ -114,7 +156,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     let probe: MediaAudioProbe
     let teardown: MediaTeardownEvidence
     let fixture: Fixture
-    let room = Room()
+    let room: Room
+    let roomConnectionTrace: RoomConnectionTrace?
     nonisolated let packetEvents = PacketEvents()
     var packets: Task<Void, Never>?
     let decoder: DecodedAudioProbe
@@ -172,6 +215,11 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     init(_ fixture: Fixture) {
       self.fixture = fixture
       let observationClock = MediaObservationClock()
+      let connectionTrace =
+        fixture.journey == nil ? nil : RoomConnectionTrace(clock: observationClock)
+      roomConnectionTrace = connectionTrace
+      if let connectionTrace { LiveKitSDK.setTracing(connectionTrace) }
+      room = Room()
       self.observationClock = observationClock
       probe = MediaAudioProbe(
         observationClock: observationClock,
@@ -252,7 +300,11 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       room.add(delegate: self)
       probe.startup.record(.roomConnectRequested)
       do {
-        try await room.connect(url: fixture.url, token: fixture.token)
+        try await withTaskCancellationHandler {
+          try await room.connect(url: fixture.url, token: fixture.token)
+        } onCancel: { [roomConnectionTrace, observationClock] in
+          roomConnectionTrace?.cancel(atMs: observationClock.milliseconds)
+        }
         probe.startup.record(.roomConnectCompleted)
       } catch {
         probe.startup.record(.roomConnectFailed(errorType: String(reflecting: type(of: error))))
@@ -613,6 +665,9 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let audioEngineStoppedAtMs: Double?
       let heldOutputStartAtMs: Double?
       let startup: MediaStartupEvidence.Receipt
+      let roomConnectionBeganAtMs: Double?
+      let roomConnectionSteps: [RoomConnectionTrace.Step]?
+      let roomConnectionCancelledAtMs: Double?
       let sdkAudioState: MediaSDKAudioState
       let publicationMuted: Bool
       let onHold: Bool
@@ -666,6 +721,9 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         audioOutputAvailable: AudioManager.shared.engineAvailability.isOutputAvailable,
         audioEngineStoppedAtMs: audioEngineStoppedAtMs, heldOutputStartAtMs: heldOutputStartAtMs,
         startup: probe.startup.receipt(),
+        roomConnectionBeganAtMs: roomConnectionTrace?.beganAtMs,
+        roomConnectionSteps: roomConnectionTrace?.steps(),
+        roomConnectionCancelledAtMs: roomConnectionTrace?.cancelledAtMs,
         sdkAudioState: sdkAudioState(),
         publicationMuted: publicationMuted,
         onHold: client?.calls.first(where: { $0.id.rawValue == session.fixture.conversationId })?

@@ -29,6 +29,21 @@ test('a failed preparation retains phase timings and excludes raw connection err
   ] });
 });
 
+test('connection diagnostics retain only allowlisted steps and the native cancellation time', () => {
+  const replay = report([row('prepareEntered', 10), row('roomConnectRequested', 11), row('roomConnectFailed', 2100)]);
+  replay.roomConnectionCancelledAtMs = 2011;
+  replay.roomConnectionSteps = [
+    { stage: 'ws_open', elapsedMs: 12, url: 'private value' },
+    { stage: 'private value', elapsedMs: 13 },
+    { stage: 'pc_created', elapsedMs: 18 },
+  ];
+  const result = diagnoseNativeStartup(replay);
+  assert.deepEqual(result.roomConnectionSteps, [
+    { stage: 'ws_open', elapsedMs: 12 }, { stage: 'pc_created', elapsedMs: 18 },
+  ]);
+  assert.equal(result.roomConnectionCancelledAtMs, 2011);
+});
+
 test('serialized receipts distinguish delivery, queue consumption and actual engine outcome', () => {
   const observations = [row('prepareCompleted', 10)];
   assert.equal(diagnoseNativeStartup(report(observations)).boundary, 'activationNeverDelivered');
