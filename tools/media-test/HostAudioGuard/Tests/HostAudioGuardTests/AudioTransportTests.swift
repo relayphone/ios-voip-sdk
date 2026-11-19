@@ -87,7 +87,7 @@ func spoofedHostedEnvironmentRejectsMacBuiltInDevices(
 }
 
 @Test(arguments: [(AudioDirection.input, "AVIODevice 2"), (AudioDirection.output, "AVIODevice")])
-func hostedActivityRequiresThePinnedNameAndUIDForItsDirection(
+func hostedActivityAcceptsTheTwoPinnedUIDsInEitherDirection(
   _ direction: AudioDirection, _ uid: String
 ) throws {
   let name = "Apple Virtual Sound Device"
@@ -96,10 +96,9 @@ func hostedActivityRequiresThePinnedNameAndUIDForItsDirection(
   let policy = HostedAudioPolicy(environment: hostedEnvironment)
   for transport: AudioTransport in [.builtIn, .virtual, AudioTransport(.max)] {
     let route = try AudioRoute(1, transport: { _ in transport }, members: { _ in [] })
-    #expect(
-      policy.allows(guest, directions: [direction], route: route)
-        == (transport == .builtIn || transport == .virtual))
-    #expect(!policy.allows(guest, directions: [otherDirection], route: route))
+    let allowed = transport == .builtIn || transport == .virtual
+    #expect(policy.allows(guest, directions: [direction], route: route) == allowed)
+    #expect(policy.allows(guest, directions: [otherDirection], route: route) == allowed)
     #expect(!policy.allows(guest, directions: [.input, .output], route: route))
     #expect(
       !policy.allows(
@@ -107,7 +106,7 @@ func hostedActivityRequiresThePinnedNameAndUIDForItsDirection(
         directions: [direction], route: route))
     #expect(
       !policy.allows(
-        .init(name: name, uid: "other-uid", modelUID: nil),
+        .init(name: name, uid: "AVIODevice 3", modelUID: nil),
         directions: [direction], route: route))
   }
   let aggregate = try AudioRoute(

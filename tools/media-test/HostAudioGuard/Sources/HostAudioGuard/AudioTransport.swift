@@ -89,11 +89,8 @@ struct AudioDeviceIdentity: Sendable {
 }
 
 struct HostedAudioPolicy {
-  // GitHub-hosted macOS exposes two Apple guest audio endpoints with no model UID.
-  private static let hostedDeviceUIDs: [AudioDirection: String] = [
-    .input: "AVIODevice 2",
-    .output: "AVIODevice",
-  ]
+  // GitHub-hosted macOS has exposed these two guest endpoints in both direction assignments.
+  private static let hostedDeviceUIDs: Set<String> = ["AVIODevice", "AVIODevice 2"]
   let isHosted: Bool
 
   init(environment: [String: String]) {
@@ -106,8 +103,8 @@ struct HostedAudioPolicy {
     _ identity: AudioDeviceIdentity, directions: [AudioDirection], route: AudioRoute
   ) -> Bool {
     guard isHosted else { return route.hardware == nil }
-    guard identity.name == "Apple Virtual Sound Device", !directions.isEmpty,
-      directions.allSatisfy({ Self.hostedDeviceUIDs[$0] == identity.uid })
+    guard identity.name == "Apple Virtual Sound Device", directions.count == 1,
+      Self.hostedDeviceUIDs.contains(identity.uid)
     else { return false }
     return route.transport == .builtIn || route.hardware == nil
   }
