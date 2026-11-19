@@ -105,27 +105,27 @@ const runtime = registry.__expoConversationsRuntime ?? new Runtime();
 registry.__expoConversationsRuntime = runtime;
 
 /** Complete current conversation list, including native cold-launch state. @category State */
-export const getConversations = () =>
+export const getConversations = (): Promise<readonly Conversation[]> =>
   runtime.read();
 /** Subscribe to immutable system state. @category Hooks */
-export function useConversations() {
+export function useConversations(): readonly Conversation[] {
   return useSyncExternalStore(
     runtime.conversations.subscribe,
     runtime.conversations.read
   );
 }
 /** Subscribe to one stable conversation object. @category Hooks */
-export function useConversation(id: ConversationId) {
+export function useConversation(id: ConversationId): Conversation | undefined {
   return useSyncExternalStore(runtime.conversations.subscribe, () =>
     runtime.conversations.read().find((conversation) => conversation.id === id)
   );
 }
 /** Native audio endpoints and the actual current output. @category Hooks */
-export function useAudioRoutes() {
+export function useAudioRoutes(): AudioRoutes {
   return useSyncExternalStore(runtime.routes.subscribe, runtime.routes.read);
 }
 /** Current native push registration, or null. @category Hooks */
-export function usePushToken() {
+export function usePushToken(): PushToken | null {
   return useSyncExternalStore(runtime.token.subscribe, runtime.token.read);
 }
 /**
@@ -134,13 +134,13 @@ export function usePushToken() {
  * without the option. @category Call previews
  */
 export const getCallPreviewActivities =
-  () => runtime.readPreviews();
+  (): Promise<CallPreviewActivities | null> => runtime.readPreviews();
 /**
  * Subscribe to what the app's servers need for call previews' Live Activities; send each change
  * to them. Null on Android and without the `callPreviewActivities` plugin option.
  * @category Hooks
  */
-export function useCallPreviewActivities() {
+export function useCallPreviewActivities(): CallPreviewActivities | null {
   return useSyncExternalStore(
     runtime.previews.subscribe,
     runtime.previews.read
@@ -150,7 +150,7 @@ export function useCallPreviewActivities() {
  * iOS, with the `focusFilter` plugin option: what the app's Focus filter last asked for. Null on
  * Android and without the option. @category Focus
  */
-export const getFocusFilterState = () =>
+export const getFocusFilterState = (): Promise<FocusFilterState | null> =>
   runtime.readFocus();
 /**
  * Subscribe to the app's Focus filter state, which changes when a Focus that has the filter turns
@@ -158,13 +158,13 @@ export const getFocusFilterState = () =>
  * Android and without the `focusFilter` plugin option.
  * @category Hooks
  */
-export function useFocusFilterState() {
+export function useFocusFilterState(): FocusFilterState | null {
   return useSyncExternalStore(runtime.focus.subscribe, runtime.focus.read);
 }
 /** Register at module scope before React mounts; null detaches and cancels old work. @category Handler */
 export function setConversationHandler(
   handler: ConversationHandler | null
-) {
+): void {
   runtime.handler.set(handler);
 }
 type HookEvent = ConversationEvent | {
@@ -183,7 +183,7 @@ function matchesEvent<Name extends keyof ConversationEventMap>(
 export function useConversationEvent<Name extends keyof ConversationEventMap>(
   name: Name,
   listener: (event: ConversationEventMap[Name]) => void
-) {
+): void {
   const callback = useRef(listener);
   useEffect(() => {
     callback.current = listener;
