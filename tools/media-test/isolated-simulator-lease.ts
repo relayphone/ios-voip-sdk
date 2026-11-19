@@ -1,7 +1,6 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { promisify } from 'node:util';
@@ -17,8 +16,6 @@ const reattachmentBudget = 15 * 60_000;
 const releaseBudget = 90_000;
 const transportRetryDelay = 2_000;
 const udidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
-const inputPattern = /^xcr Mic ([1-9]\d*)_UID$/;
-const outputPattern = /^xcr Speaker ([1-9]\d*)_UID$/;
 
 export class IsolatedLeaseRefusal extends Error {}
 class LeaseTransportError extends IsolatedLeaseRefusal {}
@@ -26,10 +23,6 @@ class LeaseTransportError extends IsolatedLeaseRefusal {}
 function cliFailure(message: string): IsolatedLeaseRefusal {
   return /cannot reach .*Transport error/i.test(message)
     ? new LeaseTransportError(message) : new IsolatedLeaseRefusal(message);
-}
-
-function redactLeaseOutput(output: string): string {
-  return output.replace(/\b(xc[lhcpdj])_[A-Za-z0-9_-]{8,}/g, '$1_[redacted]');
 }
 
 function object(value: unknown): Record<string, unknown> {
@@ -53,7 +46,12 @@ interface Routes {
   verifiedAt: number;
 }
 
-function routes(value: unknown, field: string, now: number): Routes {
+function deviceSlot(uid: string, prefix: string): string | undefined {
+  const start = `${prefix} `;
+  if (uid.startsWith(start)) return /^([1-9]\d*)_UID$/.exec(uid.slice(start.length))?.[1];
+}
+
+function routes(value: unknown, field: string, now: number, config: LeaseConfiguration): Routes {
   const proof = object(value);
   if (proof.isolated !== true) {
     throw new IsolatedLeaseRefusal(`${field}.isolated must be true${reason(proof.reason)}`);
@@ -61,8 +59,8 @@ function routes(value: unknown, field: string, now: number): Routes {
   const { input, output, verifiedAt } = proof;
   if (typeof input !== 'string' || !input) throw new IsolatedLeaseRefusal(`${field}.input is missing`);
   if (typeof output !== 'string' || !output) throw new IsolatedLeaseRefusal(`${field}.output is missing`);
-  const inputSlot = inputPattern.exec(input)?.[1];
-  const outputSlot = outputPattern.exec(output)?.[1];
+  const inputSlot = deviceSlot(input, config.inputDevicePrefix);
+  const outputSlot = deviceSlot(output, config.outputDevicePrefix);
   if (!inputSlot) throw new IsolatedLeaseRefusal(`${field}.input is not a virtual microphone UID`);
   if (!outputSlot) throw new IsolatedLeaseRefusal(`${field}.output is not a virtual speaker UID`);
   if (inputSlot !== outputSlot) throw new IsolatedLeaseRefusal(`${field} device slots do not match`);
@@ -82,15 +80,17 @@ export interface Proof extends Routes {
 }
 
 /** Preserves the checker phase files if the outer deadline interrupts its own reporting. */
-export async function checkerPhaseLog(scratch: string): Promise<string> {
+export async function checkerPhaseLog(scratch: string,
+  { checkerDirectoryPrefix, checkerAppId }: Pick<LeaseConfiguration, 'checkerDirectoryPrefix' | 'checkerAppId'>,
+): Promise<string> {
   const directories = (await readdir(scratch, { withFileTypes: true }))
-    .filter(entry => entry.isDirectory() && entry.name.startsWith('xcr-audio-check.'));
+    .filter(entry => entry.isDirectory() && entry.name.startsWith(checkerDirectoryPrefix));
   const directory = directories.length === 1 ? join(scratch, directories[0]!.name) : undefined;
   const read = (name: string) => directory
     ? readFile(join(directory, name), 'utf8').catch(() => undefined) : Promise.resolve(undefined);
   const [tone, feed, record, probe] = await Promise.all(
     ['tone.txt', 'feed.txt', 'record.txt', 'probe.txt'].map(read));
-  const observations = (probe ?? '').split('\n').filter(line => line.includes(' dev.xcr.simtone '));
+  const observations = (probe ?? '').split('\n').filter(line => line.includes(` ${checkerAppId} `));
   return [
     `Playback phase:\n${tone?.trim() || 'No output'}`,
     `Virtual microphone feed phase:\n${feed?.trim() || 'No output'}`,
@@ -101,14 +101,15 @@ export async function checkerPhaseLog(scratch: string): Promise<string> {
 
 function readProof(
   view: Record<string, unknown>, id: string, now: number, waitingForHeartbeat: boolean, attached: boolean,
+  config: LeaseConfiguration,
 ): Proof | undefined {
   const lease = object(view.lease);
   if (lease.id !== id) throw new IsolatedLeaseRefusal('The lease response has a different lease identifier');
   const audio = object(lease.audio);
-  if (audio.isolated === false && audio.reason !== undefined) routes(audio, 'lease.audio', now);
+  if (audio.isolated === false && audio.reason !== undefined) routes(audio, 'lease.audio', now, config);
   if (audio.required !== true) throw new IsolatedLeaseRefusal('lease.audio.required must be true');
   if (waitingForHeartbeat && audio.isolated === false && audio.reason === undefined) return;
-  const proof = routes(audio, 'lease.audio', now);
+  const proof = routes(audio, 'lease.audio', now, config);
   const sims = Array.isArray(view.sims) ? view.sims.map(object) : [];
   const owned = sims.filter(sim => sim.leaseId === id);
   const primary = owned.filter(sim => sim.primary === true);
@@ -122,7 +123,7 @@ function readProof(
   if ((simulator.platform !== undefined && simulator.platform !== 'ios-sim') || simulator.state !== 'booted') {
     throw new IsolatedLeaseRefusal('The lease UDID must identify a booted iOS simulator');
   }
-  const sim = routes(simulator.audio, 'simulator.audio', now);
+  const sim = routes(simulator.audio, 'simulator.audio', now, config);
   if (sim.input !== proof.input || sim.output !== proof.output) {
     throw new IsolatedLeaseRefusal('The lease and simulator audio UIDs differ');
   }
@@ -133,37 +134,70 @@ type LeaseCommand = (file: string, args: string[], options: {
   cwd: string; env: NodeJS.ProcessEnv; timeout: number; signal?: AbortSignal;
 }) => Promise<{ stdout: string; stderr: string }>;
 
-async function releaseHandle(env: NodeJS.ProcessEnv): Promise<NodeJS.ProcessEnv | undefined> {
-  if (env.XCR_LEASE_ID) return env;
-  const directory = env.XCR_CONFIG_DIR ?? join(homedir(), '.config/xcr');
+async function releaseHandle(env: NodeJS.ProcessEnv, { configDir, cliEnv }: LeaseConfiguration): Promise<NodeJS.ProcessEnv | undefined> {
+  if (env[cliEnv.leaseId]) return env;
   const readState = async (file: string) => {
-    try { return json(await readFile(join(directory, file), 'utf8')); }
+    try { return json(await readFile(join(configDir, file), 'utf8')); }
     catch { return {}; }
   };
-  const saved = object((await readState('leases.json'))[env.XCR_LEASE_KEY!]);
-  const url = env.XCR_URL ?? (await readState('config.json')).url;
+  const saved = object((await readState('leases.json'))[env[cliEnv.scope]!]);
+  const url = env[cliEnv.url] ?? (await readState('config.json')).url;
   if (typeof saved.leaseId !== 'string' || typeof saved.token !== 'string' || typeof url !== 'string') return;
-  return { ...env, XCR_URL: url, XCR_LEASE_ID: saved.leaseId, XCR_LEASE_TOKEN: saved.token, XCR_ALLOW_RELEASE: '1' };
+  return { ...env, [cliEnv.url]: url, [cliEnv.leaseId]: saved.leaseId, [cliEnv.leaseToken]: saved.token };
 }
 
 export interface LeaseConfiguration {
   cli: string;
   checker: string;
+  configDir: string;
+  cliErrorPrefix: string;
+  cliSecretPattern: RegExp;
+  cliEnv: { scope: string; url: string; leaseId: string; leaseToken: string };
+  inputDevicePrefix: string;
+  outputDevicePrefix: string;
+  checkerAppId: string;
+  checkerDirectoryPrefix: string;
   project?: string;
   environment: NodeJS.ProcessEnv;
 }
 
 export function isolatedLeaseConfiguration(environment: NodeJS.ProcessEnv): LeaseConfiguration | undefined {
-  const { SIMULATOR_LEASE_CLI: cli, SIMULATOR_LEASE_AUDIO_CHECKER: checker } = environment;
-  if (!cli && !checker) return;
-  if (!cli || !checker || !isAbsolute(checker)) {
-    throw new IsolatedLeaseRefusal('Set SIMULATOR_LEASE_CLI and an absolute SIMULATOR_LEASE_AUDIO_CHECKER path');
+  if (!Object.entries(environment).some(([name, value]) => name.startsWith('ISOLATED_LEASE_') && value)) return;
+  const required = (suffix: string) => {
+    const name = `ISOLATED_LEASE_${suffix}`;
+    const value = environment[name]?.trim();
+    if (!value) throw new IsolatedLeaseRefusal(`Set ${name} to configure the isolated simulator lease`);
+    return value;
+  };
+  const cli = required('CLI');
+  const checker = required('CHECKER');
+  const configDir = required('CONFIG_DIR');
+  if (!isAbsolute(checker) || !isAbsolute(configDir)) {
+    throw new IsolatedLeaseRefusal('ISOLATED_LEASE_CHECKER and ISOLATED_LEASE_CONFIG_DIR must be absolute paths');
   }
-  return { cli, checker, project: environment.ISOLATED_LEASE_PROJECT?.trim() || undefined, environment };
+  const pattern = required('CLI_SECRET_PATTERN');
+  let cliSecretPattern: RegExp;
+  try { cliSecretPattern = new RegExp(pattern, 'g'); }
+  catch { throw new IsolatedLeaseRefusal('ISOLATED_LEASE_CLI_SECRET_PATTERN must be a valid regular expression'); }
+  const cliEnv = { scope: required('CLI_SCOPE_ENV'), url: required('CLI_URL_ENV'),
+    leaseId: required('CLI_LEASE_ID_ENV'), leaseToken: required('CLI_LEASE_TOKEN_ENV') };
+  if (new Set(Object.values(cliEnv)).size !== 4 || Object.values(cliEnv).some(name => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name))) {
+    throw new IsolatedLeaseRefusal('The isolated lease CLI environment variable names must be valid and distinct');
+  }
+  const inputDevicePrefix = required('INPUT_DEVICE_PREFIX');
+  const outputDevicePrefix = required('OUTPUT_DEVICE_PREFIX');
+  if (inputDevicePrefix === outputDevicePrefix) throw new IsolatedLeaseRefusal('The virtual input and output prefixes must differ');
+  return {
+    cli, checker, configDir, cliSecretPattern, cliEnv, inputDevicePrefix, outputDevicePrefix,
+    cliErrorPrefix: required('CLI_ERROR_PREFIX'),
+    checkerAppId: required('CHECKER_APP_ID'),
+    checkerDirectoryPrefix: required('CHECKER_DIRECTORY_PREFIX'),
+    project: environment.ISOLATED_LEASE_PROJECT?.trim() || undefined, environment,
+  };
 }
 
 export async function withIsolatedSimulatorLease<T>(
-  { cli, checker, project, environment }: LeaseConfiguration,
+  config: LeaseConfiguration,
   signal: AbortSignal,
   run: (proof: Proof, signal: AbortSignal) => Promise<T>,
   check: (checker: string, udid: string, signal: AbortSignal) => Promise<string>,
@@ -177,14 +211,16 @@ export async function withIsolatedSimulatorLease<T>(
     prepareRelease?: () => void;
   } = {},
 ): Promise<T> {
-  let id = environment.XCR_LEASE_ID;
+  const { cli, checker, project, environment, cliEnv, cliErrorPrefix, cliSecretPattern } = config;
+  const redactLeaseOutput = (output: string) => output.replace(cliSecretPattern, '[redacted]');
+  let id = environment[cliEnv.leaseId];
   const attached = Boolean(id);
-  if (Boolean(id) !== Boolean(environment.XCR_LEASE_TOKEN)) {
+  if (Boolean(id) !== Boolean(environment[cliEnv.leaseToken])) {
     throw new IsolatedLeaseRefusal('An existing isolated simulator lease requires both its identifier and its token');
   }
   // Scope acquisition and cleanup to this run, including when acquisition fails after creating a lease.
-  const env: NodeJS.ProcessEnv = id ? { ...environment, XCR_ALLOW_RELEASE: '1' }
-    : { ...environment, XCR_LEASE_KEY: randomUUID() };
+  const env: NodeJS.ProcessEnv = id || environment[cliEnv.scope] ? { ...environment }
+    : { ...environment, [cliEnv.scope]: randomUUID() };
   const cwd = process.cwd();
   async function invoke(args: string[], timeout: number, cancellation?: AbortSignal, commandEnv = env): Promise<string> {
     const acquiring = args[0] === 'up';
@@ -201,7 +237,8 @@ export async function withIsolatedSimulatorLease<T>(
       const stdout = typeof failure.stdout === 'string' ? redactLeaseOutput(failure.stdout.trim()) : '';
       if (acquiring && (stderr || stdout)) report([stderr, stdout].filter(Boolean).join('\n'));
       cancellation?.throwIfAborted();
-      const diagnostic = /^xcr: (.+)$/m.exec(stderr)?.[1] ?? stderr;
+      const diagnostic = stderr.split(/\r?\n/).find(line => line.startsWith(cliErrorPrefix))
+        ?.slice(cliErrorPrefix.length).trim() ?? stderr;
       if (args[0] === 'down' && failure.killed === true) {
         throw new LeaseTransportError(`Isolated simulator lease release command timed out${reason(diagnostic)}`);
       }
@@ -231,7 +268,7 @@ export async function withIsolatedSimulatorLease<T>(
 
   async function release() {
     // The CLI clears its local lease record even when the DELETE request fails.
-    const handle = await releaseHandle(env);
+    const handle = await releaseHandle(env, config);
     let commandEnv = env;
     return retryTransport(releaseBudget, new AbortController().signal, async remaining => {
       try { await invoke(['down'], Math.min(remaining, 30_000), undefined, commandEnv); }
@@ -276,7 +313,7 @@ export async function withIsolatedSimulatorLease<T>(
       if (typeof acquired.udid !== 'string' || !udidPattern.test(acquired.udid)) {
         throw new IsolatedLeaseRefusal('Acquisition returned no valid simulator UDID');
       }
-      acquiredProof = { udid: acquired.udid, ...routes(acquired.audio, 'audio', now()) };
+      acquiredProof = { udid: acquired.udid, ...routes(acquired.audio, 'audio', now(), config) };
     }
 
     const leaseID = id;
@@ -286,7 +323,7 @@ export async function withIsolatedSimulatorLease<T>(
     try {
       while (!proof) {
         const view = json(await invoke(['lease'], 10_000, startupSignal));
-        proof = readProof(view, leaseID, now(), true, attached);
+        proof = readProof(view, leaseID, now(), true, attached, config);
         if (!proof) await pause(pollInterval, startupSignal);
       }
     } catch (error) {
@@ -313,7 +350,7 @@ export async function withIsolatedSimulatorLease<T>(
     })}`);
     async function refreshProof(cancellation: AbortSignal) {
       const view = json(await invoke(['lease'], 10_000, cancellation));
-      const updated = readProof(view, leaseID, now(), false, attached);
+      const updated = readProof(view, leaseID, now(), false, attached, config);
       if (updated?.udid !== expected.udid || updated.input !== expected.input || updated.output !== expected.output) {
         throw new IsolatedLeaseRefusal('The isolated simulator lease route changed during the run');
       }

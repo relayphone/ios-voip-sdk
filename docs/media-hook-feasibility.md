@@ -79,11 +79,24 @@ transport. Unknown transports, hardware aggregate members, and route changes fai
 The job summary lists each running device's
 name, UID, transport, and verdict. A runner with no default devices reports `no host devices`.
 
-For a local run, set `SIMULATOR_LEASE_CLI` to an audio-isolation-capable lease CLI
-(version 0.3.0 or later for the current adapter) and `SIMULATOR_LEASE_AUDIO_CHECKER` to
-the absolute path of its executable host-side isolation checker. Configure the CLI's
-connection and credentials in the environment. The runner acquires an isolated simulator
-lease or uses the lease identifier and credentials supplied in the CLI's environment.
+For a local run, configure the lease CLI's connection and credentials using its own environment
+variables. The runner passes those values through and acquires an isolated simulator lease or
+attaches using the lease identifier and token supplied to the CLI. Set all of the following:
+
+| Variable | Value |
+| --- | --- |
+| `ISOLATED_LEASE_CLI` | Lease CLI executable that supports audio isolation |
+| `ISOLATED_LEASE_CONFIG_DIR` | Absolute path to the directory the CLI uses for `config.json` and `leases.json` |
+| `ISOLATED_LEASE_CLI_ERROR_PREFIX` | Prefix of the CLI's error lines on stderr |
+| `ISOLATED_LEASE_CLI_SECRET_PATTERN` | Regular expression that matches CLI credentials to redact from logs |
+| `ISOLATED_LEASE_CLI_SCOPE_ENV` | Name of the CLI variable for the lease state key |
+| `ISOLATED_LEASE_CLI_URL_ENV` | Name of the CLI variable for the backend URL |
+| `ISOLATED_LEASE_CLI_LEASE_ID_ENV`, `ISOLATED_LEASE_CLI_LEASE_TOKEN_ENV` | Names of the CLI variables for attaching to an existing lease |
+| `ISOLATED_LEASE_INPUT_DEVICE_PREFIX`, `ISOLATED_LEASE_OUTPUT_DEVICE_PREFIX` | Device UID prefixes, such as `Lease Mic` and `Lease Speaker` for UIDs ending in ` 2_UID` |
+| `ISOLATED_LEASE_CHECKER` | Absolute path to the executable host-side isolation checker |
+| `ISOLATED_LEASE_CHECKER_APP_ID` | Bundle identifier used by the checker's test app |
+| `ISOLATED_LEASE_CHECKER_DIRECTORY_PREFIX` | Prefix of the checker's temporary directory under `TMPDIR` |
+
 Set `ISOLATED_LEASE_PROJECT` to select a project when acquiring a lease. An acquisition
 waits up to ten minutes in the queue and reports the CLI output. On a transport error,
 the runner reconnects to the same request within a total fifteen-minute deadline.

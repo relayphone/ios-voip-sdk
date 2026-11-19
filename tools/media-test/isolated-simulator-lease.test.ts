@@ -6,16 +6,38 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { test } from 'node:test';
 import { checkerPhaseLog, isolatedLeaseConfiguration, withIsolatedSimulatorLease } from './isolated-simulator-lease.ts';
 
-const id = 'lse_test';
+const id = 'example-lease-id';
 const udid = '345336B4-5696-4443-9D5B-E866DB7EB79A';
 const now = 1_795_000_000_000;
-const audio = { isolated: true, input: 'xcr Mic 2_UID', output: 'xcr Speaker 2_UID', verifiedAt: now - 1_000 };
+const audio = { isolated: true, input: 'Lease Mic 2_UID', output: 'Lease Speaker 2_UID', verifiedAt: now - 1_000 };
 const valid = {
   udid, lease: { id, audio: { ...audio, required: true } },
   sims: [{ udid, leaseId: id, primary: true, platform: 'ios-sim', state: 'booted', audio }],
 };
-const config = { cli: '/lease', checker: '/checker', environment: {} };
+const configuration = {
+  ISOLATED_LEASE_CLI: '/lease',
+  ISOLATED_LEASE_CHECKER: '/checker',
+  ISOLATED_LEASE_CONFIG_DIR: '/lease-config',
+  ISOLATED_LEASE_CLI_ERROR_PREFIX: 'example-lease:',
+  ISOLATED_LEASE_CLI_SECRET_PATTERN: 'lease_secret_[A-Za-z0-9_-]+',
+  ISOLATED_LEASE_CLI_SCOPE_ENV: 'EXAMPLE_LEASE_KEY',
+  ISOLATED_LEASE_CLI_URL_ENV: 'EXAMPLE_URL',
+  ISOLATED_LEASE_CLI_LEASE_ID_ENV: 'EXAMPLE_LEASE_ID',
+  ISOLATED_LEASE_CLI_LEASE_TOKEN_ENV: 'EXAMPLE_LEASE_TOKEN',
+  ISOLATED_LEASE_INPUT_DEVICE_PREFIX: 'Lease Mic',
+  ISOLATED_LEASE_OUTPUT_DEVICE_PREFIX: 'Lease Speaker',
+  ISOLATED_LEASE_CHECKER_APP_ID: 'test.example.audio-check',
+  ISOLATED_LEASE_CHECKER_DIRECTORY_PREFIX: 'lease-audio-check.',
+};
+const config = { ...isolatedLeaseConfiguration(configuration)!, environment: {} };
 const waiting = { lease: { id, audio: { required: true, isolated: false } } };
+
+test('refuses each missing setting in a local lease configuration', () => {
+  for (const name of Object.keys(configuration)) {
+    assert.throws(() => isolatedLeaseConfiguration({ ...configuration, [name]: undefined }),
+      { message: `Set ${name} to configure the isolated simulator lease` });
+  }
+});
 
 function fixture(views: unknown[], { acquisitionError, project, attached = false, downError }: {
   acquisitionError?: Error; project?: string; attached?: boolean; downError?: string;
@@ -34,14 +56,14 @@ function fixture(views: unknown[], { acquisitionError, project, attached = false
     signal = new AbortController().signal,
     arm?: (proof: { udid: string }, signal: AbortSignal) => Promise<AbortSignal>,
   ) => withIsolatedSimulatorLease({
-    ...config, project, environment: attached ? { XCR_LEASE_ID: id, XCR_LEASE_TOKEN: 'test' } : {},
+    ...config, project, environment: attached ? { EXAMPLE_LEASE_ID: id, EXAMPLE_LEASE_TOKEN: 'test' } : {},
   }, signal, run, check, line => reports.push(line), {
     now: () => now, arm,
     pause: (ms, signal) => delay(views.length ? 0 : ms, undefined, { signal }),
     shutdown: async simulator => { assert.equal(simulator, udid); events.push('shutdown'); return ''; },
     command: async (file, args, { env }) => {
       assert.equal(file, config.cli);
-      if (env.XCR_LEASE_KEY) keys.add(env.XCR_LEASE_KEY);
+      if (env.EXAMPLE_LEASE_KEY) keys.add(env.EXAMPLE_LEASE_KEY);
       const verb = args[0]!;
       events.push(verb);
       switch (verb) {
@@ -82,7 +104,7 @@ test('uses and releases an existing lease without acquiring another', async () =
 });
 
 test('refuses a simulator record owned by a different lease', async () => {
-  const { start, events } = fixture([{ ...valid, sims: [{ ...valid.sims[0], leaseId: 'lse_other' }] }]);
+  const { start, events } = fixture([{ ...valid, sims: [{ ...valid.sims[0], leaseId: 'other-lease-id' }] }]);
   await assert.rejects(start(async () => assert.fail('journey started')), /UDID is missing from its simulator list/);
   assert.deepEqual(events, ['up', 'lease', 'down']);
 });
@@ -94,8 +116,8 @@ test('refuses invalid proofs before the checker or journey', async () => {
     [{ input: undefined }, /input is missing/],
     [{ output: undefined }, /output is missing/],
     [{ input: 'BuiltInMicrophoneDevice' }, /input is not a virtual microphone UID/],
-    [{ output: 'xcr Mic 2_UID' }, /output is not a virtual speaker UID/],
-    [{ output: 'xcr Speaker 3_UID' }, /device slots do not match/],
+    [{ output: 'Lease Mic 2_UID' }, /output is not a virtual speaker UID/],
+    [{ output: 'Lease Speaker 3_UID' }, /device slots do not match/],
     [{ verifiedAt: undefined }, /verifiedAt must be an epoch timestamp/],
     [{ verifiedAt: now + 1 }, /verifiedAt is in the future/],
     [{ verifiedAt: now - 120_001 }, /verifiedAt is older than 120 seconds/],
@@ -120,8 +142,8 @@ test('refuses invalid proofs before the checker or journey', async () => {
 
 test('reports the CLI refusal and releases even if acquisition fails', async () => {
   const { start, events, reports, keys } = fixture([], { acquisitionError: Object.assign(new Error('failed'), {
-    stderr: 'working...\nxcr: conflict: no Mac can isolate audio\n',
-    stdout: 'xcj_testroute_1234',
+    stderr: 'working...\nexample-lease: conflict: no Mac can isolate audio\n',
+    stdout: 'lease_secret_testroute_1234',
   }) });
   await assert.rejects(start(async () => assert.fail('journey started')), /conflict: no Mac can isolate audio/);
   assert.deepEqual(events, ['up', 'down']);
@@ -132,12 +154,12 @@ test('reports the CLI refusal and releases even if acquisition fails', async () 
 
 test('a timed-out request uses its configured project and releases the same pending lease', async () => {
   const configured = isolatedLeaseConfiguration({
-    SIMULATOR_LEASE_CLI: '/lease', SIMULATOR_LEASE_AUDIO_CHECKER: '/checker', ISOLATED_LEASE_PROJECT: '  media  ',
+    ...configuration, ISOLATED_LEASE_PROJECT: '  media  ',
   });
   assert.equal(configured?.project, 'media');
   const { start, events, keys } = fixture([], {
     project: configured?.project,
-    acquisitionError: Object.assign(new Error('waiting'), { stderr: 'xcr: still waiting for a Mac' }),
+    acquisitionError: Object.assign(new Error('waiting'), { stderr: 'example-lease: still waiting for a Mac' }),
   });
   await assert.rejects(start(async () => assert.fail('journey started')), /still waiting for a Mac/);
   assert.deepEqual(events, ['up', 'down']);
@@ -145,10 +167,11 @@ test('a timed-out request uses its configured project and releases the same pend
 });
 
 const transportError = 'cannot reach https://leases.example.test: Transport error';
-const heartbeatFailure = Object.assign(new Error('heartbeat failed'), { stderr: `xcr: ${transportError}\n` });
+const heartbeatFailure = Object.assign(new Error('heartbeat failed'), { stderr: `example-lease: ${transportError}\n` });
 
 test('reattaches to the same pending lease after a transport error and only releases after the journey', async () => {
-  const original = { XCR_CONFIG_DIR: '/lease-config', XCR_URL: 'https://leases.example.test', XCR_TOKEN: 'test-token' };
+  const original = { EXAMPLE_CONFIG_DIR: '/lease-config', EXAMPLE_URL: 'https://leases.example.test',
+    EXAMPLE_TOKEN: 'test-token', EXAMPLE_LEASE_KEY: 'existing-run-scope' };
   const order: string[] = [];
   const environments: NodeJS.ProcessEnv[] = [];
   const directories: string[] = [];
@@ -173,9 +196,10 @@ test('reattaches to the same pending lease after a transport error and only rele
   assert.equal(result, true);
   assert.deepEqual(order, ['up', 'up', 'lease', 'checker', 'lease', 'journey', 'down']);
   assert.equal(environments[0], environments[1]);
-  assert.equal(environments[0]?.XCR_CONFIG_DIR, original.XCR_CONFIG_DIR);
-  assert.equal(environments[0]?.XCR_URL, original.XCR_URL);
-  assert.equal(environments[0]?.XCR_TOKEN, original.XCR_TOKEN);
+  assert.equal(environments[0]?.EXAMPLE_CONFIG_DIR, original.EXAMPLE_CONFIG_DIR);
+  assert.equal(environments[0]?.EXAMPLE_URL, original.EXAMPLE_URL);
+  assert.equal(environments[0]?.EXAMPLE_TOKEN, original.EXAMPLE_TOKEN);
+  assert.equal(environments[0]?.EXAMPLE_LEASE_KEY, original.EXAMPLE_LEASE_KEY);
   assert.deepEqual(directories, [process.cwd(), process.cwd()]);
 });
 
@@ -200,26 +224,26 @@ test('release retries the same authenticated lease after the CLI clears its reco
   t.after(() => rm(directory, { recursive: true, force: true }));
   const leases = join(directory, 'leases.json');
   const log: string[] = [];
-  const savedToken = 'xcl_savedtesttoken';
+  const savedToken = 'lease_secret_savedtesttoken';
   let releases = 0;
-  await withIsolatedSimulatorLease({ ...config, environment: { XCR_CONFIG_DIR: directory, XCR_URL: 'https://leases.example.test' } },
+  await withIsolatedSimulatorLease({ ...config, configDir: directory, environment: { EXAMPLE_CONFIG_DIR: directory, EXAMPLE_URL: 'https://leases.example.test' } },
     new AbortController().signal, async () => {}, async () => 'PASS: slot 2 isolated (both devices)',
     line => log.push(line), {
       now: () => now,
       command: async (_, [verb], { env }) => {
         if (verb === 'up') {
-          await writeFile(leases, JSON.stringify({ [env.XCR_LEASE_KEY!]: { leaseId: id, token: savedToken } }));
+          await writeFile(leases, JSON.stringify({ [env.EXAMPLE_LEASE_KEY!]: { leaseId: id, token: savedToken } }));
           return { stdout: JSON.stringify({ lease: id, udid, audio }), stderr: '' };
         }
         if (verb === 'lease') return { stdout: JSON.stringify(valid), stderr: '' };
         if (++releases === 1) {
-          assert.equal(env.XCR_LEASE_ID, undefined);
+          assert.equal(env.EXAMPLE_LEASE_ID, undefined);
           await unlink(leases);
           return { stdout: '', stderr: `release: ${transportError}\n` };
         }
-        assert.equal(env.XCR_LEASE_ID, id);
-        assert.equal(env.XCR_LEASE_TOKEN, savedToken);
-        assert.equal(env.XCR_CONFIG_DIR, directory);
+        assert.equal(env.EXAMPLE_LEASE_ID, id);
+        assert.equal(env.EXAMPLE_LEASE_TOKEN, savedToken);
+        assert.equal(env.EXAMPLE_CONFIG_DIR, directory);
         if (releases === 2) throw Object.assign(new Error('timed out'), { killed: true });
         return { stdout: '', stderr: '' };
       },
@@ -298,16 +322,16 @@ test('a checker pass cannot admit a journey with stale lease proof', async () =>
 test('retains checker phase logs on timeout', async t => {
   const scratch = await mkdtemp(join(tmpdir(), 'checker-log-test-'));
   t.after(() => rm(scratch, { recursive: true, force: true }));
-  const work = join(scratch, 'xcr-audio-check.test');
+  const work = join(scratch, 'lease-audio-check.test');
   await mkdir(work);
-  const process = 'process pid=42 dev.xcr.simtone in=false["xcr Mic 2_UID"] out=true["xcr Speaker 2_UID"]';
+  const process = 'process pid=42 test.example.audio-check in=false["Lease Mic 2_UID"] out=true["Lease Speaker 2_UID"]';
   await Promise.all([
     writeFile(join(work, 'tone.txt'), 'done\n'),
     writeFile(join(work, 'feed.txt'), 'feed started\n'),
     writeFile(join(work, 'record.txt'), ''),
     writeFile(join(work, 'probe.txt'), process + '\nprocess pid=123 OtherApp'),
   ]);
-  const result = await checkerPhaseLog(scratch);
+  const result = await checkerPhaseLog(scratch, config);
   assert.match(result, /Playback phase:\ndone/);
   assert.match(result, /Virtual microphone feed phase:\nfeed started/);
   assert.match(result, /Recording phase:\nNo output before timeout/);

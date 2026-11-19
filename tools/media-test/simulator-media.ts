@@ -7,7 +7,7 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { command as executeCommand, deadline } from './fixture-runtime.ts';
-import { checkerPhaseLog, isolatedLeaseConfiguration, withIsolatedSimulatorLease } from './isolated-simulator-lease.ts';
+import { checkerPhaseLog, isolatedLeaseConfiguration, withIsolatedSimulatorLease, type LeaseConfiguration } from './isolated-simulator-lease.ts';
 
 /** Evidence mapped from the verified simulator lease. */
 export interface SimulatorLeaseAudio {
@@ -32,7 +32,7 @@ export function requireSimulatorMedia({ environment, leaseAudio }: Authorization
   environment: process.env,
 }): void {
   if (isHosted(environment)) return;
-  const runOnCI = 'Use hosted GitHub Actions or a verified isolated simulator lease.';
+  const runOnCI = 'Use hosted GitHub Actions or set the ISOLATED_LEASE_* variables for a verified isolated simulator lease.';
   if (!leaseAudio) {
     throw new SimulatorMediaRefusal(`Simulator media can activate the host speakers and microphone. ${runOnCI}`);
   }
@@ -178,7 +178,7 @@ export async function withSimulatorMediaAudio<T>(
       const simulator = localDestination && localDestination !== 'check-lease'
         ? simulatorForMedia(localDestination.simulator, proof.udid) : proof.udid;
       return run(leaseSignal, simulator, guard?.track);
-    }, (checker, udid, leaseSignal) => runChecker(checker, udid, leaseSignal, environment), record, {
+    }, (checker, udid, leaseSignal) => runChecker(checker, udid, leaseSignal, localLease), record, {
       async arm(proof, signal) {
         // Relative paths select the simulator runtime's executable in simctl.
         const launchd = await executeCommand('xcrun', ['simctl', 'spawn', proof.udid, 'bin/launchctl', 'managerpid'],
@@ -210,13 +210,13 @@ export async function withSimulatorMediaAudio<T>(
 class AudioCheckerTimeout extends Error {
 }
 
-async function runChecker(checker: string, udid: string, signal: AbortSignal, env: NodeJS.ProcessEnv) {
+async function runChecker(checker: string, udid: string, signal: AbortSignal, config: LeaseConfiguration) {
   const scratch = await mkdtemp(join(tmpdir(), 'simulator-audio-check-'));
   try {
-    return await runCommand(checker, [udid], signal, { capture: true, env: { ...env, TMPDIR: scratch } });
+    return await runCommand(checker, [udid], signal, { capture: true, env: { ...config.environment, TMPDIR: scratch } });
   } catch (error) {
     if (!(error instanceof AudioCheckerTimeout)) throw error;
-    throw new Error(`${error.message}\n${await checkerPhaseLog(scratch)}`);
+    throw new Error(`${error.message}\n${await checkerPhaseLog(scratch, config)}`);
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
