@@ -1,0 +1,19 @@
+{
+  "extends": ["../../../.oxlintrc.json"],
+  "rules": {
+    "anti-slop/no-runtime-typeof": "error",
+    "anti-slop/no-unknown-parameters": "error",
+    "anti-slop/no-unknown-returns": "error",
+    "anti-slop/require-safety-comment-for-type-assertion": "error",
+    "landmines-types/no-explicit-return-types": "error"
+  },
+  "overrides": [
+    {
+      "files": ["journeys/late-handler.ts"],
+      "rules": {
+        // Journey configuration and native rejections need runtime field checks.
+        "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }]
+      }
+    }
+  ]
+}

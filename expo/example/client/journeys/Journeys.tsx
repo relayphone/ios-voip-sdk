@@ -15,7 +15,8 @@ export function Journeys() {
   calls.useConversationEvent('incomingConversationOutcome', event => {
     const preview = event.outcome.status === 'previewed' ? event.outcome.reason : undefined;
     events.current.outcomes.push({ id: event.serverCallId, eventID: event.eventId, status: event.outcome.status,
-      previewReason: preview?.type, filterCause: preview?.type === 'filtered' ? preview.cause : undefined });
+      ...(preview && { previewReason: preview.type }),
+      ...(preview?.type === 'filtered' && { filterCause: preview.cause }) });
   });
   useEffect(() => {
     const open = (url: string | null) => {

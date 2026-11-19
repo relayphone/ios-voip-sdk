@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { HandlerDispatcher } from '../../src/conversations/runtime.ts';
 import type { Conversation, ConversationId } from '../../src/conversations/types.ts';
-import { CountingTransport, driveLateHandler, lateHandlerConfiguration, type JourneyClock,
+import { CountingTransport, driveLateHandler, isLateHandlerConfiguration, type JourneyClock,
   type LateHandlerApi, type LateHandlerConfiguration, type LateHandlerResults, type LateHandlerScenario,
 } from '../../example/client/journeys/late-handler.ts';
 
@@ -109,7 +109,7 @@ for (const bad of [null, {}, { handlerAttachDelayMS: -1 }, { handlerAttachDelayM
   { connectDeadlineMS: 30000 }, { schemaVersion: 2 }, { runID: '../stale' }]) {
   test(`malformed fixture config fails closed: ${JSON.stringify(bad)}`, () => {
     const config = fixture('before-deadline').config;
-    assert.throws(() => lateHandlerConfiguration(bad === null || Object.keys(bad).length === 0 ? bad : { ...config, ...bad }), /configuration/);
+    assert.equal(isLateHandlerConfiguration(bad === null || Object.keys(bad).length === 0 ? bad : { ...config, ...bad }), false);
   });
 }
 
