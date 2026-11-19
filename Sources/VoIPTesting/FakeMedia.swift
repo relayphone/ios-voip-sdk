@@ -49,6 +49,9 @@ public final class FakeMedia: CallMedia {
   /// How the fake prepares each call's media. Defaults to ``Preparation/succeed``.
   public var preparation = Preparation.succeed
 
+  /// Observes cancellation of a waiting preparation from the task cancellation handler.
+  public var onPreparationCancelled: (@Sendable (CallID) -> Void)?
+
   private var waiting:
     [(id: UInt64, call: CallID, continuation: CheckedContinuation<Void, any Error>)] =
       []
@@ -91,6 +94,7 @@ public final class FakeMedia: CallMedia {
     case .wait:
       waitCount += 1
       let id = waitCount
+      let onPreparationCancelled = self.onPreparationCancelled
       try await withTaskCancellationHandler {
         try await withCheckedThrowingContinuation {
           (continuation: CheckedContinuation<Void, any Error>) in
@@ -101,6 +105,7 @@ public final class FakeMedia: CallMedia {
           }
         }
       } onCancel: { [weak self] in
+        onPreparationCancelled?(call.id)
         Task { @VoIPActor in self?.cancel(id) }
       }
     }

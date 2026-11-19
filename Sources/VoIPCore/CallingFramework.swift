@@ -6,6 +6,9 @@
 /// to the system by ``deviceUUID(for:)``.
 @VoIPActor
 public protocol CallingFramework: Sendable {
+  /// The platform this adapter represents when reporting system failures.
+  var platform: SystemFailure.Platform { get }
+
   /// Starts the calling framework with the app's configuration.
   ///
   /// The SDK calls this once, before any other method. The adapter calls `onEvent` for everything
@@ -30,7 +33,8 @@ public protocol CallingFramework: Sendable {
   ///   - call: The call to report.
   ///   - completion: Called once with what the system did with the call:
   ///     ``PresentationOutcome/presented``, ``PresentationOutcome/filtered(_:)`` or
-  ///     ``PresentationOutcome/refused(_:)``.
+  ///     ``PresentationOutcome/refused(_:)``. Use ``CallFailure/systemFailed(_:)`` with an
+  ///     admission diagnostic when the system refuses to admit the call.
   func reportIncoming(
     _ call: Call, completion: @escaping @VoIPActor (PresentationOutcome) -> Void)
 
@@ -104,6 +108,9 @@ public enum FrameworkEvent: Hashable, Sendable {
 }
 
 extension CallingFramework {
+  /// Swift calling frameworks represent iOS by default.
+  public var platform: SystemFailure.Platform { .ios }
+
   /// Custom adapters opt into mid-call video explicitly.
   public var supportsVideoChanges: Bool { false }
   /// Custom adapters reject mid-call video until they implement its reporting boundary.

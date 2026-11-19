@@ -2,7 +2,7 @@ import Foundation
 
 /// The state machine for one call.
 ///
-/// ``begin(_:configuration:now:)`` creates a call and ``transition(_:_:configuration:now:)``
+/// ``begin(_:attempt:configuration:now:)`` creates a call and ``transition(_:_:configuration:now:)``
 /// moves it on by one event. Both are pure: they return the next state and the effects the engine
 /// carries out, in order, and read no clock.
 ///
@@ -11,9 +11,15 @@ import Foundation
 /// - Every deadline is armed and disarmed by effects that carry a generation, so the engine can
 ///   ignore a timer that fires after its deadline was disarmed.
 /// - Every path to ``Phase/ended(_:)`` settles the held action, disarms every deadline and emits
-///   ``CallEvent/ended(_:)`` once. An ended call ignores every later event.
+///   ``CallEvent/ended(_:)`` once. A later admission result can finish platform cleanup while
+///   the recorded end stays fixed.
 /// - A call preview never involves the calling framework.
 enum CallMachine {
+  /// Identifies one admission or Start independently of a reusable call ID.
+  struct AttemptID: Hashable, Sendable {
+    let generation: UInt64
+  }
+
   /// How a call begins on this device.
   enum Origin: Hashable, Sendable {
     /// An incoming call, presented according to its presentation policy.
@@ -99,6 +105,9 @@ enum CallMachine {
     var earlyProgress: EarlyProgress?
     var deferredMedia: DeferredMedia?
     var localEndReceipt: EndReceipt?
+    var admissionAttempt: AttemptID?
+    var removeAfterAdmission = false
+    var startAttempt: AttemptID?
 
     var endResult: EndResult? {
       if let localEndReceipt { return .ended(localEndReceipt) }
@@ -125,6 +134,10 @@ enum CallMachine {
   enum Event: Hashable, Sendable {
     /// The calling framework finished reporting the incoming call.
     case reportCompleted(PresentationOutcome)
+    /// The platform refused to admit the incoming call.
+    case admissionFailed(AttemptID, SystemFailure)
+    /// The platform refused the outgoing Start.
+    case startFailed(AttemptID, SystemFailure)
     /// The calling framework asks the SDK to perform an action.
     case performed(ActionID, Action)
     /// The calling framework stopped waiting for an action.

@@ -23,6 +23,7 @@ final class CallEngine {
 
   /// Every call this device knows, including ended calls until the retention passes.
   private(set) var states: [CallID: CallMachine.State] = [:]
+  private var attemptGeneration: UInt64 = 0
   /// The known calls in the order they began.
   private var order: [CallID] = []
   /// How each incoming call appeared after its first report.
@@ -230,10 +231,23 @@ final class CallEngine {
   /// refuses.
   private func send(_ action: Action, for call: Call?) async throws(ActionError) {
     guard let call else { return }
+    let startAttempt = action.isStart ? states[call.id]?.startAttempt : nil
+    precondition(!action.isStart || startAttempt != nil, "A native Start requires an attempt")
     do throws(ActionError) {
       try await framework.request(action, for: call)
     } catch {
-      serially { self.handle(call.id, .requestFailed(action)) }
+      if let startAttempt {
+        let diagnostic: SystemFailure.Diagnostic? =
+          if case .refused(let detail?) = error { .framework(detail) } else { nil }
+        let failure = SystemFailure(
+          platform: framework.platform, operation: .start, diagnostic: diagnostic)
+        serially {
+          guard self.states[call.id]?.startAttempt == startAttempt else { return }
+          self.handle(call.id, .startFailed(startAttempt, failure))
+        }
+      } else {
+        serially { self.handle(call.id, .requestFailed(action)) }
+      }
       throw error
     }
   }
@@ -425,7 +439,12 @@ final class CallEngine {
       stopAudio()
       subscribers.yield(.audioDeactivated)
     case .reset:
-      for id in liveCalls { handle(id, .frameworkReset) }
+      for id in order {
+        guard let state = states[id], !state.phase.isEnded || state.admissionAttempt != nil
+        else { continue }
+        handle(id, .frameworkReset)
+        if state.admissionAttempt != nil { finishReport(id, .refused(.frameworkReset)) }
+      }
     }
   }
 
@@ -503,9 +522,11 @@ final class CallEngine {
 
   @discardableResult
   private func begin(_ origin: CallMachine.Origin) -> Reply {
+    attemptGeneration += 1
     guard
       let (state, effects) = CallMachine.begin(
-        origin, configuration: configuration, now: clock.date())
+        origin, attempt: .init(generation: attemptGeneration),
+        configuration: configuration, now: clock.date())
     else { return Reply() }
     let id = state.call.id
     states[id] = state
@@ -514,7 +535,6 @@ final class CallEngine {
       SimulatorLifecycle.record(state.call)
     #endif
     let reply = run(effects, for: id)
-    settle(id)
     for early in earlyEvents.removeValue(forKey: id) ?? [] { handle(id, .server(early.event)) }
     return reply
   }
@@ -532,17 +552,30 @@ final class CallEngine {
         : next.call.connectedAt != nil && state.call.connectedAt == nil ? .connected : .state
       SimulatorLifecycle.record(next.call, kind)
     #endif
-    if next.phase.isEnded || next.phase.isPreviewing,
-      preparedCalls.remove(id) != nil
-    {
-      media.release(next.call)
-    }
-    settle(id)
     return run(effects, for: id)
   }
 
-  private func reportCompleted(_ id: CallID, _ outcome: PresentationOutcome) {
-    handle(id, .reportCompleted(outcome))
+  private func reportCompleted(
+    _ id: CallID, attempt: CallMachine.AttemptID, outcome: PresentationOutcome
+  ) {
+    guard states[id]?.admissionAttempt == attempt else { return }
+    let resolved: PresentationOutcome
+    switch outcome {
+    case .refused(.systemFailed(let failure)) where failure.operation == .admission:
+      handle(id, .admissionFailed(attempt, failure))
+      resolved = outcome
+    case .refused(.refused):
+      let failure = SystemFailure(platform: framework.platform, operation: .admission)
+      handle(id, .admissionFailed(attempt, failure))
+      resolved = .refused(.systemFailed(failure))
+    default:
+      handle(id, .reportCompleted(outcome))
+      resolved = outcome
+    }
+    finishReport(id, resolved)
+  }
+
+  private func finishReport(_ id: CallID, _ outcome: PresentationOutcome) {
     // The policy may preview a call that the system filtered, or that was answered elsewhere
     // while it was being reported.
     let appearance: PresentationOutcome =
@@ -553,13 +586,16 @@ final class CallEngine {
 
   /// Carries out a transition's effects in order.
   private func run(_ effects: [CallMachine.Effect], for id: CallID) -> Reply {
+    settle(id)
+
     var reply = Reply()
     for effect in effects {
       switch effect {
       case .reportIncoming(let call):
+        guard let attempt = states[id]?.admissionAttempt else { preconditionFailure() }
         framework.reportIncoming(call) { [weak self] outcome in
           guard let self else { return }
-          serially { self.reportCompleted(call.id, outcome) }
+          serially { self.reportCompleted(call.id, attempt: attempt, outcome: outcome) }
         }
       case .request(let action): reply.request = action
       case .reject(_, let error): reply.rejection = error
@@ -588,6 +624,11 @@ final class CallEngine {
   /// Keeps the engine's records in step with a call's new phase.
   private func settle(_ id: CallID) {
     guard let state = states[id] else { return }
+    if state.phase.isEnded || state.phase.isPreviewing,
+      preparedCalls.remove(id) != nil
+    {
+      media.release(state.call)
+    }
     if !state.phase.isPreparing, state.deferredMedia != .preparing {
       preparations.removeValue(forKey: id)?.cancel()
     }

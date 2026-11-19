@@ -427,7 +427,8 @@ extension EngineTests {
       await #expect(throws: ActionError.refused(nil)) {
         try await h.client.request(.start(outgoing))
       }
-      #expect(try await h.next() == .ended(callID, .failed(.refused)))
+      let failure = SystemFailure(platform: .ios, operation: .start)
+      #expect(try await h.next() == .ended(callID, .failed(.systemFailed(failure))))
     }
 
     @Test func refusedJoinReturnsToPreview() async throws {
@@ -468,7 +469,10 @@ extension EngineTests {
       (PresentationOutcome.presented, true, PresentationOutcome.presented),
       (.filtered(.doNotDisturb), true, .previewed(.filtered(.doNotDisturb))),
       (.filtered(.doNotDisturb), false, .filtered(.doNotDisturb)),
-      (.refused(.refused), true, .refused(.refused)),
+      (
+        .refused(.refused), true,
+        .refused(.systemFailed(SystemFailure(platform: .ios, operation: .admission)))
+      ),
     ])
     func reportReturnsHowTheCallAppears(
       system: PresentationOutcome, previewsFilteredCalls: Bool, expected: PresentationOutcome
