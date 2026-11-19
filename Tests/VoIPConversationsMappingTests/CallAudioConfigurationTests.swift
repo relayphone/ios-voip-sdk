@@ -81,7 +81,8 @@ extension MappingClientTests {
       let session = ConfigurationSession()
       let client = try VoIPClient.start(
         framework: framework, media: ConfigurationMedia(session),
-        audio: AudioSessionBridge(adapter: audio) { session.remember() })
+        audio: AudioSessionBridge(adapter: audio) { session.remember() },
+        configuration: VoIPConfiguration(maximumParticipatingCalls: 2))
       var events = client.events().makeAsyncIterator()
       let first = CallID(rawValue: "first")
       let second = CallID(rawValue: "second")

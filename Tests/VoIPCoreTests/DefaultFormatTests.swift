@@ -39,6 +39,18 @@ import VoIPCore
     #expect(push == .incoming(expected, eventID: EventID(rawValue: "event-1")))
   }
 
+  @Test func decodesTheCallingLine() throws {
+    let push = decode(
+      incoming(
+        caller: caller("phone", "+14155550123"),
+        extra: #","line":{"accountID":"account-a","id":"work","label":"Work"}"#))
+    let account = try #require(AccountID(rawValue: "account-a"))
+    let id = try #require(LineID(rawValue: "work"))
+    let expected = IncomingCall(
+      id: callID, parties: [alice], line: CallingLine(accountID: account, id: id, label: "Work"))
+    #expect(push == .incoming(expected, eventID: EventID(rawValue: "event-1")))
+  }
+
   @Test(arguments: [#""room-1""#, "null", "[1]", "2"])
   func ignoresMetadataThatIsNotAnObject(_ metadata: String) {
     let push = decode(

@@ -141,12 +141,11 @@ enum CallMachine {
     var startProgress: [StartProgress] = []
 
     var reservesParticipation: Bool {
-      guard !call.isOnHold else { return false }
       switch phase {
       case .ringing: return answer != nil
-      case .requesting, .placing, .preparing, .placingStart, .preparingStart, .dialing,
-        .connecting, .connected, .reconnecting:
+      case .requesting, .placing, .preparing, .placingStart, .preparingStart:
         return true
+      case .dialing, .connecting, .connected, .reconnecting: return !call.isOnHold
       case .reporting, .previewing, .ended: return false
       }
     }

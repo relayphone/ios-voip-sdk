@@ -94,8 +94,9 @@
           endResults.removeAll()
           admittedReports.removeAll()
         }
-      case .incoming(let id, let eventID, _, let party, let deferAdmission):
-        let incoming = IncomingCall(id: id.callID, parties: [try party.sdkParty()])
+      case .incoming(let id, let eventID, let line, let party, let deferAdmission):
+        let incoming = IncomingCall(
+          id: id.callID, parties: [try party.sdkParty()], line: line.callingLine)
         let delivery = VoIPPush.incoming(incoming, eventID: eventID.eventID)
         if deferAdmission { framework.presentationOutcome = nil }
         if engine == nil {
@@ -277,8 +278,9 @@
       actionCount += 1
       let request: Action
       switch action {
-      case .start(_, _, let party):
-        request = .start(OutgoingCall(id: id, parties: [try party.sdkParty()]))
+      case .start(_, let line, let party):
+        request = .start(
+          OutgoingCall(id: id, parties: [try party.sdkParty()], line: line.callingLine))
       case .answer: request = .answer(id)
       case .join: request = .join(id)
       case .end: request = .end(id)
@@ -289,10 +291,11 @@
         do {
           try await engine.setVideo(id, enabled: enabled)
         } catch {
-          errors.append(.init(id: id, kind: error.specKind, reason: error.specRefusal))
+          errors.append(.init(id: id, kind: error.specKind))
         }
         return
       }
+      var refusedByPolicy = false
       if origin == .system {
         framework.perform(request)
         if case .answer = request, let task = engine.answerTask(id) {
@@ -304,12 +307,14 @@
           }
         }
       } else if case .start(let outgoing) = request {
-        engine.start(outgoing) { [weak self] result in
-          self?.startSettlements[id, default: 0] += 1
-          if case .failure(let error) = result {
-            self?.errors.append(.init(id: id, kind: error.specKind, reason: error.specRefusal))
-          }
-        }
+        engine.start(
+          outgoing, onPolicyRefusal: { refusedByPolicy = true },
+          completion: { [weak self] result in
+            self?.startSettlements[id, default: 0] += 1
+            if case .failure(let error) = result {
+              self?.recordRequestFailure(error, for: id, refusedByPolicy: refusedByPolicy)
+            }
+          })
       } else {
         let recordStart = framework.records.count
         if deferConfirmation { framework.requestResult = .accept }
@@ -322,7 +327,7 @@
             endResults[id] = try engine.end(id, actionID: actionID)
             return
           }
-          try await engine.request(request)
+          try await engine.request(request, onPolicyRefusal: { refusedByPolicy = true })
           if deferConfirmation,
             framework.records.dropFirst(recordStart).contains(where: {
               if case .request(request, _) = $0 { true } else { false }
@@ -331,8 +336,18 @@
             pendingHolds.append(request)
           }
         } catch {
-          errors.append(.init(id: id, kind: error.specKind, reason: error.specRefusal))
+          recordRequestFailure(error, for: id, refusedByPolicy: refusedByPolicy)
         }
+      }
+    }
+
+    private func recordRequestFailure(
+      _ error: ActionError, for id: CallID, refusedByPolicy: Bool
+    ) {
+      if refusedByPolicy, case .notAllowed = error {
+        errors.append(.init(id: id, kind: .refused, reason: .notAllowed))
+      } else {
+        errors.append(.init(id: id, kind: error.specKind))
       }
     }
 
@@ -397,8 +412,9 @@
       guard actual == expected.lifecycle else {
         return "\(id.rawValue): expected \(expected.lifecycle), observed \(actual)."
       }
-      if expected.lineID != nil {
-        return "\(id.rawValue) has no observed line."
+      if let lineID = expected.lineID?.lineID, call.line.id != lineID {
+        return "\(id.rawValue): expected line \(lineID.rawValue), "
+          + "observed \(call.line.id.rawValue)."
       }
       if let remoteID = expected.remoteID, !call.remoteIDs.contains(remoteID.remoteCallID) {
         return "\(id.rawValue) is missing the remote alias \(remoteID.rawValue)."
@@ -658,17 +674,12 @@
   }
 
   extension ActionError {
-    fileprivate var specRefusal: SpecV0.Refusal? {
-      if case .noParticipationSlot = self { .notAllowed } else { nil }
-    }
-
     fileprivate var specKind: SpecV0.ErrorKind {
       switch self {
       case .unknownCall: .unknownCall
       case .unsupported: .unsupported
       case .notAllowed: .invalidTransition
       case .refused: .systemFailed
-      case .noParticipationSlot: .refused
       case .remoteIdentityConflict: .remoteIdentityConflict
       }
     }

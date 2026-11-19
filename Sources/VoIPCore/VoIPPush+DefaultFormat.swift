@@ -22,6 +22,8 @@ extension VoIPPush {
   /// parentheses, hyphens and periods, which are removed; it must then be in E.164 format.
   /// `hasVideo` and `metadata` are optional. `metadata` is an object of any JSON values, which
   /// becomes the call's ``IncomingCall/metadata``; a `metadata` that isn't an object is ignored.
+  /// An optional `line` object contains `accountID`, `id` and `label`. Omit it for
+  /// ``CallingLine/default``.
   /// For the built-in Answer authority, include an `answerScope` object with `accountID` and
   /// `lineID` inside `incomingCall`. The older `incoming_call` key is accepted too.
   ///
@@ -82,7 +84,7 @@ private struct IncomingCallBody: Decodable {
   private enum CodingKeys: String, CodingKey {
     case eventID = "eventId"
     case serverCallID = "serverCallId"
-    case caller, hasVideo, metadata, answerScope
+    case caller, hasVideo, metadata, answerScope, line
   }
 
   init(from decoder: any Decoder) throws {
@@ -94,7 +96,26 @@ private struct IncomingCallBody: Decodable {
       id: callID, parties: [caller.party],
       hasVideo: (try? values.decode(Bool.self, forKey: .hasVideo)) ?? false,
       metadata: (try? values.decode([String: JSONValue].self, forKey: .metadata)) ?? [:],
-      answerScope: try? values.decode(AnswerScope.self, forKey: .answerScope))
+      answerScope: try? values.decode(AnswerScope.self, forKey: .answerScope),
+      line: try values.decodeIfPresent(LineBody.self, forKey: .line)?.line ?? .default)
+  }
+}
+
+private struct LineBody: Decodable {
+  let line: CallingLine
+
+  private enum CodingKeys: String, CodingKey { case accountID, id, label }
+
+  init(from decoder: any Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    guard let accountID = try AccountID(rawValue: values.decode(String.self, forKey: .accountID))
+    else { throw values.corrupted(.accountID, "Invalid account ID") }
+    guard let id = try LineID(rawValue: values.decode(String.self, forKey: .id))
+    else { throw values.corrupted(.id, "Invalid line ID") }
+    let label = try values.decode(String.self, forKey: .label)
+    guard (1...256).contains(label.unicodeScalars.count)
+    else { throw values.corrupted(.label, "Invalid line label length") }
+    line = CallingLine(accountID: accountID, id: id, label: label)
   }
 }
 

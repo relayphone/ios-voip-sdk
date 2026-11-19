@@ -9,6 +9,9 @@ public struct Call: Identifiable, Hashable, Sendable {
   /// The app's identifier for the call, the same on every device that rings for it.
   public let id: CallID
 
+  /// The calling line as it was when the call was admitted.
+  public let line: CallingLine
+
   /// The service identifiers bound to this call.
   public internal(set) var remoteIDs: Set<RemoteCallID> = []
 
@@ -66,6 +69,7 @@ public struct Call: Identifiable, Hashable, Sendable {
   ///   - connectedAt: When the call first connected on this device.
   ///   - metadata: Values the app attached to the call.
   ///   - answerScope: The incoming invitation's account and line.
+  ///   - line: The calling line for the call.
   public init(
     id: CallID,
     isIncoming: Bool,
@@ -77,9 +81,11 @@ public struct Call: Identifiable, Hashable, Sendable {
     answeredAt: Date? = nil,
     connectedAt: Date? = nil,
     metadata: [String: JSONValue] = [:],
-    answerScope: AnswerScope? = nil
+    answerScope: AnswerScope? = nil,
+    line: CallingLine = .default
   ) {
     self.id = id
+    self.line = line
     self.isIncoming = isIncoming
     self.parties = parties
     self.status = status
@@ -97,6 +103,9 @@ public struct Call: Identifiable, Hashable, Sendable {
 public struct IncomingCall: Hashable, Sendable {
   /// The app's identifier for the call.
   public var id: CallID
+
+  /// The line that received the call. Defaults to ``CallingLine/default``.
+  public var line: CallingLine
 
   /// The parties calling. The system presents the first.
   public var parties: [Party]
@@ -124,15 +133,18 @@ public struct IncomingCall: Hashable, Sendable {
   ///   - presentationPolicy: How this call appears on this device, when it differs from the
   ///     configuration's policy.
   ///   - answerScope: The incoming invitation's account and line.
+  ///   - line: The line that received the call.
   public init(
     id: CallID,
     parties: [Party],
     hasVideo: Bool = false,
     metadata: [String: JSONValue] = [:],
     presentationPolicy: PresentationPolicy? = nil,
-    answerScope: AnswerScope? = nil
+    answerScope: AnswerScope? = nil,
+    line: CallingLine = .default
   ) {
     self.id = id
+    self.line = line
     self.parties = parties
     self.hasVideo = hasVideo
     self.metadata = metadata
@@ -145,6 +157,9 @@ public struct IncomingCall: Hashable, Sendable {
 public struct OutgoingCall: Hashable, Sendable {
   /// The app's identifier for the call.
   public var id: CallID
+
+  /// The line that places the call. Defaults to ``CallingLine/default``.
+  public var line: CallingLine
 
   /// The parties to call. The system presents the first.
   public var parties: [Party]
@@ -162,15 +177,27 @@ public struct OutgoingCall: Hashable, Sendable {
   ///   - parties: The parties to call. The system presents the first.
   ///   - hasVideo: Whether the call includes video.
   ///   - metadata: Values the app attaches to the call.
+  ///   - line: The line that places the call.
   public init(
     id: CallID,
     parties: [Party],
     hasVideo: Bool = false,
-    metadata: [String: JSONValue] = [:]
+    metadata: [String: JSONValue] = [:],
+    line: CallingLine = .default
   ) {
     self.id = id
+    self.line = line
     self.parties = parties
     self.hasVideo = hasVideo
     self.metadata = metadata
+  }
+}
+
+extension Call {
+  init(_ incoming: IncomingCall, status: CallStatus) {
+    self.init(
+      id: incoming.id, isIncoming: true, parties: incoming.parties, status: status,
+      hasVideo: incoming.hasVideo, metadata: incoming.metadata, answerScope: incoming.answerScope,
+      line: incoming.line)
   }
 }

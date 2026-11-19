@@ -41,6 +41,12 @@ struct ServerEventHistory {
     return matching
   }
 
+  func hasBufferedEnd(for target: ServerEventTarget) -> Bool {
+    buffered.contains {
+      $0.target == target && $0.event.endReason != nil && $0.event != .answeredElsewhere
+    }
+  }
+
   mutating func prune(at now: Duration, after retention: Duration) {
     seen.removeAll { now - $0.receivedAt >= retention }
     buffered.removeAll { now - $0.receipt.receivedAt >= retention }

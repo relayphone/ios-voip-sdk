@@ -42,6 +42,31 @@ struct EngineAnswerAuthorityTests {
     #expect(rig.status(otherCallID) == .ringing)
   }
 
+  @Test func aPendingClaimReservesAcrossLinesAndRefusalReleasesIt() async throws {
+    let delay: Duration = .seconds(1)
+    let rig = AnswerRig(claim: .refuse(.notAllowed), delayClaim: delay)
+    defer { rig.engine.close() }
+    rig.invite(callID, on: try callingLine("personal", label: "Personal"))
+    rig.invite(otherCallID, on: try callingLine("work", label: "Work"))
+
+    try await rig.engine.request(.answer(callID))
+    let claim = try #require(rig.engine.answerTask(callID))
+    try await rig.clock.waitForSleepers(count: 3)
+    #expect(rig.engine.participating == [callID])
+    await #expect(throws: ActionError.notAllowed(.ringing)) {
+      try await rig.engine.request(.answer(otherCallID))
+    }
+    #expect(rig.authority.claims.map(\.call.id) == [callID])
+    #expect(rig.status(otherCallID) == .ringing)
+
+    rig.clock.advance(by: delay)
+    await claim.value
+    #expect(rig.engine.participating.isEmpty)
+    try await rig.engine.request(.answer(otherCallID))
+    #expect(rig.engine.answerTask(otherCallID) != nil)
+    #expect(rig.engine.participating == [otherCallID])
+  }
+
   @Test func aLateClaimCannotReleaseTheGrantAdoptedByReconciliation() async throws {
     let permit = AnswerPermit(id: "shared")
     let rig = AnswerRig(claim: .allow(permit), delayClaim: .milliseconds(2600))
@@ -118,9 +143,11 @@ private final class AnswerRig {
       clock: clock, authority: authority, observe: { _ in })
   }
 
-  func invite(_ id: CallID) {
+  func invite(_ id: CallID, on line: CallingLine = .default) {
     push.deliver(
-      .incoming(IncomingCall(id: id, parties: [alice]), eventID: EventID(rawValue: id.rawValue)))
+      .incoming(
+        IncomingCall(id: id, parties: [alice], line: line), eventID: EventID(rawValue: id.rawValue))
+    )
   }
 
   func status(_ id: CallID) -> CallStatus? {

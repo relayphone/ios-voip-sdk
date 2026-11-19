@@ -101,7 +101,8 @@ extension EngineTests {
     }
 
     @Test func backgroundVideoDoesNotReconfigureTheForegroundSession() async throws {
-      let h = try Harness(configuration: VoIPConfiguration(supportsVideo: true))
+      let h = try Harness(
+        configuration: VoIPConfiguration(supportsVideo: true, maximumParticipatingCalls: 2))
       try await h.connect()
       try await h.ring(IncomingCall(id: otherCallID, parties: [alice]), eventID: e2)
       let before = await h.audio.configuredCalls.count
