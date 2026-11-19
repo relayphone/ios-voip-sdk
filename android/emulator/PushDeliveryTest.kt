@@ -117,9 +117,10 @@ class PushDeliveryTest {
         row.notification.actions.single { it.title.toString().equals("Decline", true) }.actionIntent.send()
 
     private fun awaitAction(id: String, action: String, status: String) {
-        val expected = "VoIPPushExample $id $action system $status"
-        await("JavaScript $action receipt and $status state") { logs().contains(expected) }
+        val expected = "VoIPPushExample $id $action system"
+        await("JavaScript $action receipt") { logs().contains(expected) }
         assertEquals(1, logs().lineSequence().count { it.contains(expected) })
+        await("JavaScript $status state") { logs().contains("VoIPPushExample $id $status") }
     }
 
     private fun await(description: String, condition: () -> Boolean) {

@@ -15,7 +15,7 @@ import com.relayphone.voip.Handle
 internal class CoreTelecomBackend(
     private val calls: CallsManager,
     private val notification: AdmissionNotification,
-    private val customIncomingPresentation: Boolean,
+    private val customIncomingPresentation: Boolean = false,
 ) : TelecomBackend<ParcelUuid> {
     override suspend fun addCall(
         call: Call,

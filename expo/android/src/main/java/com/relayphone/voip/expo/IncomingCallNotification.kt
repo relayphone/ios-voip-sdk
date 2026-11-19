@@ -168,6 +168,8 @@ class IncomingCallActivity : Activity() {
         ring = current
         current.closeScreen = ::finish
         fun act(answer: Boolean) {
+            // Keep the Answer activity visible until it can open the host app.
+            if (answer) current.closeScreen = null
             CallHost.scope.launch {
                 if (host.act(key, answer) && answer) {
                     packageManager.getLaunchIntentForPackage(packageName)?.let(::startActivity)

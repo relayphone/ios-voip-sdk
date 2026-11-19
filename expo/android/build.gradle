@@ -36,7 +36,7 @@ tasks.named('preBuild').configure { dependsOn wireSchemas }
 kotlin.compilerOptions.optIn.add('kotlin.time.ExperimentalTime')
 
 dependencies {
-  api 'com.google.firebase:firebase-messaging:26.0.2'
+  api 'com.google.firebase:firebase-messaging:25.0.1'
   implementation 'androidx.core:core-telecom:1.1.0'
   implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
   implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0'

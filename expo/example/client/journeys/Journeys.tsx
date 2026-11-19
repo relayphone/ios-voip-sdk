@@ -14,16 +14,13 @@ export function Journeys() {
     const { conversationId: id, action, origin } = event;
     events.current.actions.push({ id, kind: action.kind, origin });
     if (Platform.OS === 'android' && id.startsWith('fcm-test-')) {
-      void calls.getConversations().then(snapshot => {
-        const state = snapshot.find(call => call.id === id)?.status;
-        console.info(`VoIPPushExample ${id} ${action.kind} ${origin} ${state}`);
-      });
+      console.info(`VoIPPushExample ${id} ${action.kind} ${origin}`);
     }
   });
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     for (const call of conversations) {
-      if (call.id.startsWith('fcm-test-') && call.status === 'ringing') console.info(`VoIPPushExample ${call.id} ringing`);
+      if (call.id.startsWith('fcm-test-')) console.info(`VoIPPushExample ${call.id} ${call.status}`);
     }
   }, [conversations]);
   calls.useConversationEvent('answeredElsewhere', event => events.current.elsewhere.push(event));
