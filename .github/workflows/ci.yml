@@ -8,6 +8,10 @@ on:
     paths-ignore: ["**.md", "docs/**"]
   workflow_dispatch:
     inputs:
+      lck_audio_repeat:
+        description: Repeat only the LiveCommunicationKit audio suite when greater than 1
+        type: number
+        default: 1
       media_server_stress:
         description: Repeat the normal parallel tool suite thirty times
         type: boolean
@@ -54,7 +58,7 @@ jobs:
         run: node tools/api-compatibility.ts
 
   tools:
-    if: ${{ !inputs.media_server_stress }}
+    if: ${{ !inputs.media_server_stress && !(inputs.lck_audio_repeat > 1) }}
     name: TypeScript tools
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -76,6 +80,7 @@ jobs:
 
   host-tests:
     name: Swift tests and formatting
+    if: ${{ !(inputs.lck_audio_repeat > 1) }}
     needs: package-isolation
     runs-on: xcode-27
     timeout-minutes: 20
@@ -91,6 +96,7 @@ jobs:
 
   builds:
     name: Builds of the libraries, the example and the Inspector
+    if: ${{ !(inputs.lck_audio_repeat > 1) }}
     needs: package-isolation
     runs-on: xcode-27
     timeout-minutes: 40
@@ -140,6 +146,8 @@ jobs:
       - uses: ./.github/actions/setup-simulator
       - name: Run the call journeys, the runtime tests and every other suite on the simulator
         id: simulator
+        env:
+          LCK_AUDIO_REPEAT: ${{ inputs.lck_audio_repeat || '1' }}
         run: |
           create_simulator() {
             name="ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$1"
@@ -152,12 +160,23 @@ jobs:
             xcrun simctl bootstatus "$SIMULATOR_ID" -b
           }
           suites() {
+            local result=$1
+            shift
             xcodebuild test -scheme VoIPSDK-Package -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
-              -derivedDataPath "$RUNNER_TEMP/tests" -resultBundlePath "$RUNNER_TEMP/results/$1.xcresult" \
-              CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO 2>&1 | tee "$RUNNER_TEMP/results/$1.log"
+              -derivedDataPath "$RUNNER_TEMP/tests" -resultBundlePath "$RUNNER_TEMP/results/$result.xcresult" \
+              "$@" CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO 2>&1 | tee "$RUNNER_TEMP/results/$result.log"
           }
+          if [[ ! "$LCK_AUDIO_REPEAT" =~ ^[1-9][0-9]*$ ]]; then
+            echo '::error::lck_audio_repeat must be a positive integer.'
+            exit 1
+          fi
           mkdir -p "$RUNNER_TEMP/results" "$RUNNER_TEMP/ci-simulators"
           create_simulator first
+          if [[ "$LCK_AUDIO_REPEAT" != 1 ]]; then
+            suites lck-audio -only-testing:RuntimeTests/RuntimeSuites/LCKAudio \
+              -parallel-testing-enabled NO -test-iterations "$LCK_AUDIO_REPEAT"
+            exit 0
+          fi
           label='infra:result-unavailable'
           trap 'echo "$label" >> "$GITHUB_STEP_SUMMARY"' EXIT
           if suites tests; then
@@ -186,7 +205,29 @@ jobs:
             label="$retry_classification (retried, failed; no further retry)"
             exit 1
           fi
+      - name: Record LCK audio activation samples
+        if: ${{ !cancelled() && inputs.lck_audio_repeat > 1 }}
+        env:
+          LCK_AUDIO_REPEAT: ${{ inputs.lck_audio_repeat }}
+        run: |
+          samples="$RUNNER_TEMP/results/lck-audio-timing.txt"
+          grep -oE 'LCK_AUDIO_TIMING [a-z-]+ -?[0-9]+(\.[0-9]+)? -?[0-9]+' \
+            "$RUNNER_TEMP/results/lck-audio.log" > "$samples"
+          {
+            echo 'LCK audio samples in milliseconds (scenario, runtime gap, callback gap)'
+            echo '```text'
+            cat "$samples"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          for scenario in start join mute-during-join hold-and-accept end-and-accept late-resume-handoff; do
+            count=$(grep -c "^LCK_AUDIO_TIMING $scenario " "$samples" || true)
+            if [[ "$count" != "$LCK_AUDIO_REPEAT" ]]; then
+              echo "::error::$scenario produced $count samples; expected $LCK_AUDIO_REPEAT."
+              exit 1
+            fi
+          done
       - name: Answer and end a call with the standalone runtime and cksim
+        if: ${{ !(inputs.lck_audio_repeat > 1) }}
         env:
           SIMULATOR_ID: ${{ steps.simulator.outputs.udid }}
         run: |
@@ -208,7 +249,7 @@ jobs:
           done
           exit "$status"
       - name: Keep the test results
-        if: failure()
+        if: ${{ failure() || (!cancelled() && inputs.lck_audio_repeat > 1) }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: simulator-tests-${{ github.run_id }}-${{ github.run_attempt }}
@@ -218,6 +259,7 @@ jobs:
 
   documentation:
     name: Documentation
+    if: ${{ !(inputs.lck_audio_repeat > 1) }}
     needs: package-isolation
     runs-on: xcode-27
     timeout-minutes: 20
