@@ -586,4 +586,4 @@ system does.
 
 ## License
 
-None yet. A license will be added before the beta release. The v0.1 release was published with an MIT license file.
+MIT. See [LICENSE](LICENSE). Parts of the React Native package derive from MIT-licensed code; their notice is in [expo/NOTICE.md](expo/NOTICE.md).

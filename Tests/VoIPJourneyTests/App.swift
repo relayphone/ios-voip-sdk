@@ -1,6 +1,7 @@
 #if os(iOS) && targetEnvironment(simulator)
   import CKSimProtocol
   import Foundation
+  import Synchronization
   import Testing
   import VoIPCore
   import VoIPLiveCommunicationKit
@@ -18,6 +19,7 @@
     let client: VoIPClient
     let media = FakeMedia()
     let system: SimulatedSystem
+    private let reports: IncomingReportLog
     private let log = EventLog()
     private var events: [CallEvent] { log.events }
     private var cursor = 0
@@ -32,21 +34,25 @@
     ///   - listening: Whether the app listens for call events from the moment the client starts,
     ///     as an observer. An app whose code is still loading starts listening later, with
     ///     ``listen()``.
+    ///   - reports: The adapter's report diagnostics.
     ///   - launch: What the system does before the app starts the client, such as
     ///     delivering the VoIP push that launched it.
     init(
-      framework: any CallingFramework = LiveCommunicationKitAdapter(),
+      framework: (any CallingFramework)? = nil,
       audio: (any AudioSession)? = nil,
       observers: [any CallObserver] = [],
       configuration: VoIPConfiguration = VoIPConfiguration(),
       listening: Bool = true,
+      reports: IncomingReportLog = IncomingReportLog(),
       launch: (SimulatedSystem) async throws -> Void = { _ in }
     ) async throws {
       try #require(VoIPSimulator.activate(), "The simulator runtime didn't activate")
       system = try SimulatedSystem()
+      self.reports = reports
       try await launch(system)
       client = try VoIPClient.start(
-        framework: framework, media: media, push: PushKitSource(),
+        framework: framework ?? LiveCommunicationKitAdapter(observeReport: reports.record),
+        media: media, push: PushKitSource(),
         audio: audio, observers: (listening ? [log] : []) + observers,
         configuration: configuration)
     }
@@ -106,7 +112,7 @@
       let deadline = ContinuousClock.now + Self.limit
       while try await !condition() {
         guard ContinuousClock.now < deadline else {
-          throw JourneyError("Timed out waiting for \(description)")
+          throw JourneyError("Timed out waiting for \(description). \(reports.summary)")
         }
         try await Task.sleep(for: .milliseconds(20))
       }
@@ -142,6 +148,65 @@
       #expect(
         reports.allSatisfy { $0.callUUID != deviceUUID(for: id).uuidString },
         sourceLocation: sourceLocation)
+    }
+  }
+
+  /// One journey's adapter timings, readable even while the report or log is blocked.
+  final class IncomingReportLog: Sendable {
+    private struct Timing {
+      let startedAt: ContinuousClock.Instant
+      var answer: (at: ContinuousClock.Instant, outcome: PresentationOutcome)?
+      var waitTimedOut: Bool?
+      var forwardedAt: ContinuousClock.Instant?
+    }
+
+    private let timings = Mutex<[CallID: Timing]>([:])
+    private let beforeLogging: (@Sendable (CallID) -> Void)?
+
+    init(beforeLogging: (@Sendable (CallID) -> Void)? = nil) {
+      self.beforeLogging = beforeLogging
+    }
+
+    func record(_ id: CallID, _ progress: LiveCommunicationKitAdapter.ReportProgress) {
+      switch progress {
+      case .started(let instant): timings.withLock { $0[id] = Timing(startedAt: instant) }
+      case .answered(let instant, let outcome):
+        timings.withLock { $0[id]?.answer = (instant, outcome) }
+      case .waitFinished(let timedOut): timings.withLock { $0[id]?.waitTimedOut = timedOut }
+      case .forwarded(let instant): timings.withLock { $0[id]?.forwardedAt = instant }
+      case .willLog: beforeLogging?(id)
+      }
+    }
+
+    func waitTimedOut(for id: CallID) -> Bool? {
+      timings.withLock { $0[id]?.waitTimedOut }
+    }
+
+    var summary: String {
+      let snapshot = timings.withLock { $0 }
+      let outstanding = snapshot.filter { $0.value.forwardedAt == nil }
+        .keys.map(\.rawValue).sorted()
+      let timing = snapshot.sorted { $0.value.startedAt < $1.value.startedAt }.map { id, report in
+        let answer =
+          report.answer.map {
+            "\($0.outcome) after \(elapsed(from: report.startedAt, to: $0.at))"
+          } ?? "pending"
+        let forwarded =
+          report.forwardedAt.map {
+            elapsed(from: report.startedAt, to: $0)
+          } ?? "pending"
+        let wait = report.waitTimedOut.map { $0 ? "timed out" : "signaled" } ?? "pending"
+        let age = elapsed(from: report.startedAt, to: .now)
+        return
+          "\(id.rawValue) [age \(age), framework answer \(answer), push callback wait \(wait), SDK forwarding \(forwarded)]"
+      }
+      return "Outstanding incoming reports: \(outstanding). Adapter report timing: \(timing)."
+    }
+
+    private func elapsed(from start: ContinuousClock.Instant, to end: ContinuousClock.Instant)
+      -> String
+    {
+      "\(Int((start.duration(to: end) / .milliseconds(1)).rounded())) ms"
     }
   }
 

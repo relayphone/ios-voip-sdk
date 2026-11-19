@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "id": "http-answer-allow",
+  "configuration": {"budgets":{"answer":{"total":4500,"claim":2500,"reconciliation":500,"settlementReserve":500},"placement":10000,"incomingRing":45000,"outgoingNoAnswer":45000,"mediaPreparation":5000,"audioActivation":10000,"audioRecovery":5000,"connection":30000,"reconnection":15000},"outgoingMedia":"whenProvided","connectionAuthority":"application","maximumParticipatingCalls":1,"previewAnsweredElsewhere":false},
+  "steps": [
+    {"kind":"input","input":{"kind":"process","running":false,"javascriptAttached":false}},
+    {"kind":"input","input":{"kind":"useHTTPAuthority","callID":"http-allow","actionID":"answer-allow","credentialRef":"authority-key"}},
+    {"kind":"input","input":{"kind":"incoming","callID":"http-allow","eventID":"invite-allow","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}}},
+    {"kind":"input","input":{"kind":"provideMedia","callID":"http-allow"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"http-allow","lifecycle":{"kind":"ringing"}}},
+    {"kind":"expect","expectation":{"kind":"httpRequests","callID":"http-allow","requests":[]}},
+    {"kind":"input","input":{"kind":"action","origin":"system","action":{"kind":"answer","callID":"http-allow"}}},
+    {"kind":"input","input":{"kind":"advance","milliseconds":100}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"http-allow","lifecycle":{"kind":"ringing"}}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"http-allow","metric":"settlements","value":0}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"http-allow","metric":"publications","value":0}},
+    {"kind":"input","input":{"kind":"httpReply","response":{"kind":"response","operation":"claim","status":200,"idempotencyKey":"v1.YW5zd2VyLWFsbG93","body":{"version":1,"callID":"http-allow","actionID":"answer-allow","kind":"allow","permit":{"id":"permit-allow","expiresAt":"2026-11-18T00:00:30.000Z"}}}}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"http-allow","lifecycle":{"kind":"connecting"}}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"http-allow","metric":"settlements","value":1}},
+    {"kind":"input","input":{"kind":"connected","callID":"http-allow","eventID":"connected-allow"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"http-allow","lifecycle":{"kind":"connected"}}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"http-allow","metric":"settlements","value":1}},
+    {"kind":"expect","expectation":{"kind":"httpRequests","callID":"http-allow","requests":[
+      {"kind":"request","operation":"claim","method":"POST","path":"/v1/answer/claim","idempotencyKey":"v1.YW5zd2VyLWFsbG93","body":{"version":1,"callID":"http-allow","accountID":"account-a","lineID":"personal","actionID":"answer-allow"}}
+    ]}}
+  ]
+}

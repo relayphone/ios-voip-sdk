@@ -67,6 +67,10 @@ Public API changes include migration guidance.
 - The optional media test kit provides simulator-only buffer video capture, deterministic pixel
   markers, bounded source/decoder ledgers and calibration measurements for video timing and drain.
 
+### Changed
+
+- The SDK, its React Native package and its Exact package are licensed under MIT.
+
 ## 0.8.0 (2026-11-16)
 
 ### Added

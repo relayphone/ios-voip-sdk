@@ -4,7 +4,7 @@ Pod::Spec.new do |s|
   s.summary = 'Native media example and simulator feasibility check.'
   s.homepage = 'https://github.com/relayphone/ios-voip-sdk'
   s.author = 'RelayPhone'
-  s.license = { :type => 'UNLICENSED' }
+  s.license = { :type => 'MIT', :file => 'LICENSE' }
   s.source = { :git => 'https://github.com/relayphone/ios-voip-sdk' }
   s.platform = :ios, '26.0'
   s.swift_version = '6.0'
