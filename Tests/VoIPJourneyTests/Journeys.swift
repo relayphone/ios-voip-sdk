@@ -331,6 +331,7 @@
           presentationPolicy: PresentationPolicy(incoming: .preview)))
       try await app.expect([.previewStarted(id, .policy)])
 
+      let expectedBusyMedia: [FakeMedia.Record]?
       if failure == .refused {
         // An outgoing call reserves the only conversation group, so the framework refuses
         // another start request (including a join).
@@ -341,6 +342,8 @@
         await app.client.confirmPlaced(busy)
         try await request.value
         try await app.expect([.performed(action, .dialing), .audioActivated])
+        // The refused join must leave the busy call's media alone until that call ends.
+        expectedBusyMedia = await app.media.records + [.deactivate]
         await #expect(throws: ActionError.self) {
           try await app.client.request(.join(id))
         }
@@ -350,6 +353,7 @@
           .performed(.end(busy), .ended(.localEnded)), .ended(busy, .localEnded), .audioDeactivated,
         ])
       } else {
+        expectedBusyMedia = nil
         try await app.client.request(.join(id))
         try await app.expect([.joinRequested(id)])
         switch failure {
@@ -383,7 +387,12 @@
         app.call(id)?.status == .previewing(.policy)
       }
       try await app.until("the system to remove the calls") { try await app.system.calls().isEmpty }
-      #expect(await app.media.records.allSatisfy { $0.kind == .prepare })
+      let mediaRecords = await app.media.records
+      if let expectedBusyMedia {
+        #expect(mediaRecords == expectedBusyMedia)
+      } else {
+        #expect(mediaRecords.allSatisfy { $0.kind == .prepare })
+      }
       app.expectNoMoreEvents()
     }
 
