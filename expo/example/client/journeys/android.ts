@@ -77,10 +77,12 @@ async function requireRoutes(
   error: string,
 ) {
   const deadline = Date.now() + 5_000;
+  let state;
   do {
-    const state = await calls.getAudioRoutes();
+    state = await calls.getAudioRoutes();
     if (matches(state.routes, state.current)) return state;
     await new Promise(resolve => setTimeout(resolve, 50));
   } while (Date.now() < deadline);
-  throw new Error(error);
+  const available = state.routes.map(route => route.type).join(', ');
+  throw new Error(`${error} (available: ${available || 'none'}, current: ${state.current?.type ?? 'none'})`);
 }

@@ -3,6 +3,7 @@ import { appendFileSync, closeSync, existsSync, openSync, writeFileSync } from '
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
+import { withEarpiece } from './earpiece.ts';
 
 interface Emulator {
   warm(): Promise<void>;
@@ -72,7 +73,7 @@ function startEmulator(output: string, attempt: number): Emulator {
   const log = openSync(join(output, `emulator-${attempt}.log`), 'w');
   const child = spawn(join(process.env.ANDROID_HOME!, 'emulator', 'emulator'), [
     '-avd', 'telecom', '-port', '5554', '-no-window', '-no-snapshot', '-no-audio', '-no-boot-anim',
-    '-accel', 'on', '-gpu', 'swiftshader', '-cores', '4', '-memory', '4096',
+    '-writable-system', '-accel', 'on', '-gpu', 'swiftshader', '-cores', '4', '-memory', '4096',
   ], { stdio: ['ignore', log, log] });
   closeSync(log);
 
@@ -84,19 +85,54 @@ function startEmulator(output: string, attempt: number): Emulator {
     resolve();
   }));
 
-  async function waitForBoot(): Promise<void> {
+  const bootID = () => adb(['shell', 'cat', '/proc/sys/kernel/random/boot_id']);
+
+  async function waitForBoot(previousBoot?: string): Promise<void> {
     const deadline = performance.now() + 180_000;
     while (performance.now() < deadline) {
       if (launchError) throw launchError;
       if (exited) throw new Error(`Emulator exited with ${child.exitCode ?? child.signalCode}`);
       try {
-        if (adb(['shell', 'getprop', 'sys.boot_completed']) === '1') return;
+        if (adb(['shell', 'getprop', 'sys.boot_completed']) === '1' &&
+            (previousBoot === undefined || bootID() !== previousBoot)) return;
       } catch {
         // ADB can be offline while Android starts.
       }
       await delay(2_000);
     }
     throw new Error('Android did not finish booting within 180 seconds');
+  }
+
+  async function reboot() {
+    const previousBoot = bootID();
+    adb(['reboot']);
+    await waitForBoot(previousBoot);
+  }
+
+  function rootADB() {
+    adb(['root']);
+    adb(['wait-for-device'], 30_000);
+  }
+
+  async function provisionEarpiece() {
+    const remote = '/vendor/etc/primary_audio_policy_configuration.xml';
+    const original = adb(['shell', 'cat', remote]);
+    const updated = withEarpiece(original);
+    if (updated === original) return;
+
+    rootADB();
+    adb(['disable-verity'], 30_000);
+    await reboot();
+    rootADB();
+    adb(['remount', 'vendor'], 30_000);
+    const local = join(output, 'primary_audio_policy_configuration.xml');
+    writeFileSync(local, updated + '\n');
+    adb(['push', local, remote]);
+    adb(['shell', 'restorecon', remote]);
+    await reboot();
+    if (adb(['shell', 'cat', remote]) !== updated) {
+      throw new Error('Emulator earpiece configuration did not survive reboot');
+    }
   }
 
   return {
@@ -106,6 +142,7 @@ function startEmulator(output: string, attempt: number): Emulator {
       try {
         await waitForBoot();
         bootedAt = performance.now();
+        await provisionEarpiece();
         adb(['shell', 'input', 'keyevent', 'KEYCODE_WAKEUP']);
         adb(['shell', 'wm', 'dismiss-keyguard']);
         const home = adb(['shell', 'am', 'start', '-W', '-a', 'android.intent.action.MAIN',
