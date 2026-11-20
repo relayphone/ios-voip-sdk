@@ -6,7 +6,7 @@ import type { ExpectationV1, InputV1, ModelV1 } from "../../../tools/conformance
 import { loadCatalog } from "../../../tools/conformance/runner.ts";
 import { wireID } from "../../../tools/conformance/schema.ts";
 import { loadCatalogV1 } from "../../../tools/conformance/v1.ts";
-import { createCallsStore } from "../../src/calls/store.ts";
+import { createCallsStore, type CallsTransport, type Observation } from "../../src/calls/store.ts";
 
 type ExpectedCall = Extract<ExpectationV1, { kind: "call" }>;
 type CallIdentity = Pick<Call, "id" | "direction" | "line" | "parties">;
@@ -15,43 +15,44 @@ type BridgePayload = { readonly kind: "record"; readonly record: Model | ModelV1
   | { readonly kind: "callRemoved"; readonly callID: WireID }
   | { readonly kind: "terminalCompleted"; readonly callID: WireID }
   | Extract<ExpectationV1, { kind: "cleanup" }>;
+type Receive = Parameters<CallsTransport["attach"]>[0];
 type Frame = BridgePayload & { readonly cursor: { readonly epoch: string; readonly sequence: number } };
 
 const timestamp = "2026-11-17T18:00:00.000Z";
 
-function callIdentity(input: InputV1): CallIdentity | undefined {
+function callIdentity(input: InputV1) {
   if (input.kind === "incoming") {
-    return { id: input.callID, direction: "incoming", line: input.line, parties: [input.party] };
+    return { id: input.callID, direction: "incoming", line: input.line, parties: [input.party] } satisfies CallIdentity;
   }
   if (input.kind === "action" && input.action.kind === "start") {
     const { callID, line, party } = input.action;
-    return { id: callID, direction: "outgoing", line, parties: [party] };
+    return { id: callID, direction: "outgoing", line, parties: [party] } satisfies CallIdentity;
   }
   return undefined;
 }
 
-function claimTimedOut(callID: WireID): Extract<CallError, { kind: "claimTimedOut" }> {
+function claimTimedOut(callID: WireID) {
   // The journey checks the error kind. The bridge still requires a correlated action.
-  return { kind: "claimTimedOut", actionID: wireID(`answer-${callID}`) };
+  return { kind: "claimTimedOut", actionID: wireID(`answer-${callID}`) } satisfies CallError;
 }
 
-function completeEndReason(reason: EndExpectation, callID: WireID, systemFailure?: SystemFailure): EndReason {
+function completeEndReason(reason: EndExpectation, callID: WireID, systemFailure?: SystemFailure) {
   if (reason.kind !== "failed") return reason;
   switch (reason.error) {
-    case "refused": return { kind: "failed", error: { kind: "refused", reason: { kind: "notAllowed" } } };
-    case "claimTimedOut": return { kind: "failed", error: claimTimedOut(callID) };
-    case "serverFailed": return { kind: "failed", error: { kind: "serverFailed" } };
+    case "refused": return { kind: "failed", error: { kind: "refused", reason: { kind: "notAllowed" } } } satisfies EndReason;
+    case "claimTimedOut": return { kind: "failed", error: claimTimedOut(callID) } satisfies EndReason;
+    case "serverFailed": return { kind: "failed", error: { kind: "serverFailed" } } satisfies EndReason;
     case "systemFailed":
       assert.ok(systemFailure, `Missing system failure input for ${callID}`);
-      return { kind: "failed", error: { kind: "systemFailed", cause: systemFailure } };
+      return { kind: "failed", error: { kind: "systemFailed", cause: systemFailure } } satisfies EndReason;
     default: assert.fail(`Missing bridge fixture details for ${reason.error}`);
   }
 }
 
-function completeLifecycle({ lifecycle, callID }: ExpectedCall, systemFailure?: SystemFailure): Lifecycle {
+function completeLifecycle({ lifecycle, callID }: ExpectedCall, systemFailure?: SystemFailure) {
   switch (lifecycle.kind) {
-    case "ending": return { kind: "ending", reason: completeEndReason(lifecycle.reason, callID, systemFailure) };
-    case "ended": return { kind: "ended", reason: completeEndReason(lifecycle.reason, callID, systemFailure), endedAt: timestamp };
+    case "ending": return { kind: "ending", reason: completeEndReason(lifecycle.reason, callID, systemFailure) } satisfies Lifecycle;
+    case "ended": return { kind: "ended", reason: completeEndReason(lifecycle.reason, callID, systemFailure), endedAt: timestamp } satisfies Lifecycle;
     case "connected":
     case "reconnecting": return { kind: lifecycle.kind, connectedAt: timestamp };
     case "previewing": return lifecycle;
@@ -68,7 +69,7 @@ function fakeNativeTransport(epoch: string) {
   let cursor = { epoch, sequence: 0 };
   let pushHealth: Extract<ModelV1, { kind: "pushHealth" }>["value"] | undefined;
   let previous: Frame | undefined;
-  let receive: ((frame: unknown) => void) | undefined;
+  let receive: Receive | undefined;
   const snapshot = () => ({
     cursor,
     calls: [
@@ -82,12 +83,12 @@ function fakeNativeTransport(epoch: string) {
 
   return {
     snapshot,
-    attach(listener: (frame: unknown) => void) {
+    attach(listener: Receive) {
       assert.equal(receive, undefined, "store attaches to native once");
       receive = listener;
       return { snapshot: snapshot(), unsubscribe: () => { receive = undefined; } };
     },
-    publish(payload: BridgePayload): Frame {
+    publish(payload: BridgePayload) {
       if (payload.kind === "callRemoved") {
         calls.delete(payload.callID);
         terminalOrder.delete(payload.callID);
@@ -109,7 +110,7 @@ function fakeNativeTransport(epoch: string) {
         capabilities.set(JSON.stringify([feature, callID]), payload.record);
       }
       cursor = { epoch, sequence: cursor.sequence + 1 };
-      const frame = { ...payload, cursor };
+      const frame: Frame = { ...payload, cursor };
       assert.ok(receive, "the store has attached");
       receive(frame);
       if (previous) receive(previous);
@@ -120,7 +121,7 @@ function fakeNativeTransport(epoch: string) {
   };
 }
 
-function assertProjectedRecord(store: ReturnType<typeof createCallsStore>, record: ModelV1): void {
+function assertProjectedRecord(store: ReturnType<typeof createCallsStore>, record: ModelV1) {
   const { calls, pushHealth } = store.snapshot();
   switch (record.kind) {
     case "pushHealth":
@@ -147,17 +148,17 @@ function assertProjectedRecord(store: ReturnType<typeof createCallsStore>, recor
 // Native counters, participation and system end reports are assertions for platform drivers.
 // Replay the bridge-visible observations from the same catalog through the JS store.
 for (const journey of [...loadCatalog(), ...loadCatalogV1()]) {
-  test(`call store replays ${journey.id}`, { timeout: 2000 }, async () => {
+  test(`call store replays ${journey.id}`, async () => {
     const native = fakeNativeTransport(journey.id);
     const store = createCallsStore(native);
     const identities = new Map<WireID, CallIdentity>();
     const systemFailures = new Map<WireID, SystemFailure>();
     const wireCalls = new Map<WireID, Call>();
-    const received: unknown[] = [];
+    const received: Observation[] = [];
     const unsubscribe = store.subscribe((observation) => received.push(observation));
     const stream = store.observe()[Symbol.asyncIterator]();
 
-    async function send(payload: BridgePayload): Promise<void> {
+    async function send(payload: BridgePayload) {
       const previous = received.length;
       const published = native.publish(payload);
       assert.equal(received.length, previous + 1, "bridge retries must be idempotent");

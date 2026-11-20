@@ -47,10 +47,10 @@ type Projection = {
   capabilities: Map<Feature, Capability>;
   pushHealth: PushHealth | undefined;
 };
-function stable<Value>(previous: Value | undefined, next: Value): Value {
+function stable<Value>(previous: Value | undefined, next: Value) {
   return previous !== undefined && JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
 }
-function applyRecord(state: Projection, record: WireRecord): void {
+function applyRecord(state: Projection, record: WireRecord) {
   switch (record.kind) {
     case 'call': {
       const id = record.value.id;
@@ -83,15 +83,15 @@ function applyRecord(state: Projection, record: WireRecord): void {
     case 'pushHealth': state.pushHealth = stable(state.pushHealth, record.value); break;
   }
 }
-function removeCall(state: Projection, id: CallID): void {
+function removeCall(state: Projection, id: CallID) {
   state.calls.delete(id);
   state.terminal.delete(id);
 }
-function prune(state: Projection, limit: number): void {
+function prune(state: Projection, limit: number) {
   const completed = [...state.terminal].filter(([, status]) => status === 'complete');
   for (const [id] of completed.slice(0, Math.max(0, completed.length - limit))) removeCall(state, id);
 }
-function hydrate(wire: Decoded<typeof nativeSnapshot>, limit: number): Projection {
+function hydrate(wire: Decoded<typeof nativeSnapshot>, limit: number) {
   const state: Projection = { calls: new Map(), terminal: new Map(), capabilities: new Map(), pushHealth: wire.pushHealth };
   for (const call of wire.calls) {
     if (state.calls.has(call.id)) throw new TypeError('Duplicate call in native snapshot');
@@ -120,28 +120,30 @@ export function createCallsStore(transport: CallsTransport, options: {
   let draining = true;
   let closed = false;
 
-  function capture(at: Cursor): CallsSnapshot {
+  function capture(at: Cursor) {
     const calls = [...state.calls.values()];
     const previous = current?.calls;
-    return Object.freeze({
+    const snapshot = {
       cursor: at,
       calls: previous?.length === calls.length && calls.every((call, i) => previous[i] === call)
         ? previous : Object.freeze(calls),
       capabilities: stable(current?.capabilities, Object.freeze([...state.capabilities.values()])),
-      ...(state.pushHealth ? { pushHealth: state.pushHealth } : {}),
-    });
+    };
+    const { pushHealth } = state;
+    return Object.freeze(pushHealth ? { ...snapshot, pushHealth } : snapshot);
   }
-  function checkpoint(kind: 'snapshot' | 'resyncRequired'): Observation {
+  function checkpoint(kind: 'snapshot' | 'resyncRequired') {
     return Object.freeze({ kind, cursor: current.cursor, snapshot: current });
   }
-  function publish(observation: Observation): void {
-    for (const listener of [...listeners]) {
+  function publish(observation: Observation) {
+    const subscribed = Array.from(listeners);
+    for (const listener of subscribed) {
       if (!listeners.has(listener)) continue;
       try { listener(observation); }
       catch (error) { queueMicrotask(() => { throw error; }); }
     }
   }
-  function accept(incoming: Frame): void {
+  function accept(incoming: Frame) {
     const { epoch, sequence } = current.cursor;
     const next = incoming.cursor;
     if (next.epoch === epoch && next.sequence <= sequence) return;
@@ -177,7 +179,7 @@ export function createCallsStore(transport: CallsTransport, options: {
     if (journal.length > replayLimit) journal.shift();
     publish(incoming);
   }
-  function drain(): void {
+  function drain() {
     if (draining || closed) return;
     draining = true;
     let failure: { error: unknown } | undefined;

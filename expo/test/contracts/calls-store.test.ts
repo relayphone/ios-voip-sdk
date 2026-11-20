@@ -37,12 +37,9 @@ test('constructors preserve opaque identities and validate domain scalars', () =
 });
 
 const cursor = (sequence: number, epoch = 'native-a') => ({ epoch, sequence });
-const snapshot = (sequence: number, epoch?: string, calls: readonly unknown[] = [], completed?: string[]) =>
-  ({ cursor: cursor(sequence, epoch), calls, ...(completed ? { completed } : {}) });
-const frame = (sequence: number, record: unknown, epoch?: string) =>
-  ({ kind: 'record', cursor: cursor(sequence, epoch), record });
-const error = { version: 0, kind: 'error', value: { kind: 'bridgeUnavailable' } };
-const call = (id: string, lifecycle: unknown = { kind: 'ringing' }) => ({
+type FixtureLifecycle = { kind: 'ringing' }
+  | { kind: 'ended'; reason: { kind: 'remoteEnded' }; endedAt: string };
+const call = (id: string, lifecycle: FixtureLifecycle = { kind: 'ringing' }) => ({
   id, direction: 'incoming', lifecycle,
   line: { accountID: 'account-a', id: 'line-a', label: 'Personal' },
   parties: [{ id: 'alice', handle: { kind: 'opaque', value: 'sip:alice@example.test' }, displayName: 'Alice' }],
@@ -52,23 +49,37 @@ const call = (id: string, lifecycle: unknown = { kind: 'ringing' }) => ({
 const terminal = (id: string) => call(id, {
   kind: 'ended', reason: { kind: 'remoteEnded' }, endedAt: '2026-01-01T00:00:00.000Z',
 });
-const callRecord = (value: ReturnType<typeof call>) => ({ version: 0, kind: 'call', value });
+type FixtureCall = ReturnType<typeof call>;
+const snapshot = (sequence: number, epoch?: string, calls: readonly FixtureCall[] = [], completed?: string[]) => {
+  const current = { cursor: cursor(sequence, epoch), calls };
+  return completed ? { ...current, completed } : current;
+};
+const callRecord = (value: FixtureCall) => ({ version: 0, kind: 'call', value } as const);
+const error = { version: 0, kind: 'error', value: { kind: 'bridgeUnavailable' } } as const;
+type FixtureRecord = ReturnType<typeof callRecord> | (Omit<typeof error, 'version'> & { version: number });
+const frame = (sequence: number, record: FixtureRecord, epoch?: string) =>
+  ({ kind: 'record', cursor: cursor(sequence, epoch), record } as const);
+type FixtureFrame = ReturnType<typeof frame>
+  | ({ cursor: ReturnType<typeof cursor>; callID: string } & (
+      { kind: 'cleanup'; outcome: 'removed' } | { kind: 'terminalCompleted' | 'callRemoved' }
+    ));
+type Receive = Parameters<CallsTransport['attach']>[0];
 
 class FakeNative implements CallsTransport {
-  private receive: ((frame: unknown) => void) | undefined;
+  private receive: Receive | undefined;
   state = snapshot(0);
-  beforeHydration: readonly unknown[] = [];
+  beforeHydration: readonly FixtureFrame[] = [];
   reads = 0;
   attaches = 0;
   detaches = 0;
-  attach(receive: (frame: unknown) => void) {
+  attach(receive: Receive) {
     this.attaches++;
     this.receive = receive;
     this.beforeHydration.forEach(receive);
     return { snapshot: this.state, unsubscribe: () => { this.detaches++; this.receive = undefined; } };
   }
   snapshot() { this.reads++; return this.state; }
-  send(frame: unknown) { this.receive?.(frame); }
+  send(frame: FixtureFrame) { this.receive?.(frame); }
 }
 
 test('attachment handles synchronous delivery, copies immutable state and journals only new sequences', async () => {

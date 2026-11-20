@@ -1,0 +1,36 @@
+{
+  "extends": ["../../../.oxlintrc.json"],
+  "rules": {
+    "eslint/no-control-regex": "error",
+    "unicorn/no-useless-spread": "error",
+    "anti-slop/no-conditional-empty-object-spread": "error",
+    "anti-slop/no-runtime-typeof": "error",
+    "anti-slop/no-shape-in-symbol-names": "error",
+    "anti-slop/no-unknown-parameters": "error",
+    "anti-slop/no-unknown-returns": "error",
+    "anti-slop/no-unsafe-dictionary-type": "error",
+    "anti-slop/require-safety-comment-for-type-assertion": "error",
+    "landmines-types/no-explicit-return-types": "error"
+  },
+  "overrides": [
+    {
+      "files": ["decode.ts"],
+      "rules": {
+        // The decoder checks primitive and record types at the untrusted transport boundary.
+        "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }],
+        // A decoder takes raw input and validates it before producing its declared output type.
+        "anti-slop/no-unknown-parameters": "off",
+        // Plain record fields remain unknown until their individual field decoders run.
+        "anti-slop/no-unsafe-dictionary-type": "off"
+      }
+    },
+    {
+      "files": ["store.ts"],
+      "rules": {
+        // The native transport supplies raw frames and snapshots that the store decodes on receipt.
+        "anti-slop/no-unknown-parameters": "off",
+        "anti-slop/no-unknown-returns": "off"
+      }
+    }
+  ]
+}
