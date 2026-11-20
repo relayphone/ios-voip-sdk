@@ -45,6 +45,7 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
   const fixtureId = randomBytes(16).toString('hex');
   const uplink = createMarker(`${fixtureId}:fromDevice`), downlink = createMarker(`${fixtureId}:toDevice`);
   const bundle = 'com.example.voipconversations';
+  const appParticipant = 'example';
   const simctl = (...args: string[]) => phase(`simulator.${args[0]}`, () => command('xcrun', ['simctl', ...args], 120_000, signal));
   // Finish simulator setup before connecting either participant; never block its packet clock.
   try { await simctl('terminate', simulator, bundle); } catch { /* First launch has no running app. */ }
@@ -67,9 +68,16 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
   let pendingSilence: Promise<SilenceWindow[]> | undefined;
   let pendingReceiver: Promise<ReceiverWindow[]> | undefined;
   type ControlStep = 'request' | 'drain' | 'window-1' | 'window-2' | 'window-3' | 'marker-analysis' | 'marker-gate' | 'silence-gate';
+  type PeerObservation = ReturnType<typeof harness.observation>;
   const controls: { leakControlCaught: boolean; publicationSilent: boolean;
     silenceWindows?: SilenceWindow[];
     receiverWindows: { phase: ControlStep; window: ReceiverWindow }[];
+    mutedCapture?: {
+      requestedAtMs: number; startedAtMs: number; trackSid: string | undefined;
+      trackMuteEvent: PeerObservation['lifecycle']['events'][number] | null;
+      pcm: Pick<PCMCapture, 'sampleRate' | 'channels'>;
+      lifecycle: Omit<PeerObservation['lifecycle'], 'afterDisconnect'>;
+    };
     failure?: { phase: ControlStep; reason: ReceiverObservationError['reason'] | 'unobserved' | 'leak' | 'control-failed'; health?: ReceiverObservationError['health']; gapMs?: number } } =
     { leakControlCaught: false, publicationSilent: false, receiverWindows: [] };
   const control = createServer(async (request, response) => {
@@ -89,7 +97,10 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
       assert.ok(resultDeadlineMs !== undefined, 'Result phase has not started');
       assert.ok(['/leak-control', '/muted'].includes(request.url ?? ''));
       // Exclude queued pre-mute frames, then retain an entire observation window.
-      await step('drain', () => delay(500)); await harness.act({ type: 'capture' });
+      const requestedAtMs = performance.now();
+      await step('drain', () => delay(500));
+      const startedAtMs = performance.now();
+      await harness.act({ type: 'capture' });
       const observe = async () => {
         const retain = (windows: ReceiverWindow[]) => controls.receiverWindows.push(
           ...windows.map(window => ({ phase: controlPhase, window })));
@@ -116,12 +127,22 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
         controls.leakControlCaught = true;
       } else {
         controlPhase = 'silence-gate';
+        const trackSid = harness.status().activeTrackSid;
         pendingSilence = step('silence-gate', () => observeSilence(() => {
           const state = harness.status();
           return { ...state, samples: state.receivedSamples };
         }, { durationMs: 1000, deadlineMs: resultDeadlineMs!, gapLimitMs: 250 }));
-        controls.silenceWindows = await pendingSilence;
-        controls.publicationSilent = true;
+        try {
+          controls.silenceWindows = await pendingSilence;
+          controls.publicationSilent = true;
+        } finally {
+          const { capture, lifecycle: { afterDisconnect: _, ...lifecycle } } = harness.observation();
+          const trackMuteEvent = trackSid === undefined ? null : lifecycle.events.findLast(event =>
+            event.kind === 'trackMuted' && event.identity === appParticipant && event.trackSid === trackSid) ?? null;
+          // The peer retains at most three seconds of mono PCM per capture.
+          controls.mutedCapture = { requestedAtMs, startedAtMs, trackSid, trackMuteEvent, lifecycle,
+            pcm: { sampleRate: capture.sampleRate, channels: capture.channels } };
+        }
       }
       response.end('ok');
     } catch (error) {
@@ -153,7 +174,7 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
     const result = join(container, 'Documents/media-result.json');
     for (const name of ['result', 'decoded', 'output', 'silence-windows']) rmSync(join(container, `Documents/media-${name}.json`), { force: true });
     writeFileSync(join(container, 'Documents/media-fixture.json'), JSON.stringify({
-      ...harness.credentials('example'), control: `http://127.0.0.1:${controlAddress.port}`,
+      ...harness.credentials(appParticipant), control: `http://127.0.0.1:${controlAddress.port}`,
       profile: "tones-v2", uplinkFrequencies: uplink.frequencies,
     }), { mode: 0o600 });
     launchAttempted = true;

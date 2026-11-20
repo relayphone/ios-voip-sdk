@@ -121,8 +121,18 @@ media teardown.
 
 Replies retain the original snapshot as untrusted `evidence`. This transport validates identity
 and timing envelopes only. It does not certify PCM coverage, processing, SDK end state or native
-release; those must pass the shared contract and terminal oracle separately. The existing
-feasibility runner is unchanged; the complete shared-contract journey remains to be connected.
+release. The feasibility runner checks audio in its own invocation. The SDK-driven video
+driver runs separate bounded scenarios with the same build. It records the host audio guard
+verdict on hosted GitHub Actions and on a verified local isolated lease:
+
+```sh
+node tools/media-test/video-journey.ts <simulator|lease> <app> <result> <scenario>
+```
+
+The scenarios are `initial-local`, `app-downgrade`, `server-remote` and `hold-resume`.
+Each uses fresh tones-v2 phases, confirmed SDK event times and independent decoded
+observations on both clocks. The remote leave report marks independent uplink coverage
+after departure as `unexercised`.
 
 ### Prebuilt native tests
 

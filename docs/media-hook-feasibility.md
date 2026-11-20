@@ -79,6 +79,10 @@ transport. Unknown transports, hardware aggregate members, and route changes fai
 The job summary lists each running device's
 name, UID, transport, and verdict. A runner with no default devices reports `no host devices`.
 
+Use the Media hook feasibility workflow's `journey` input to run one named video journey
+on a branch. The `all` default runs the full `duplex` job. Pull requests still run both the
+host harness and full `duplex` job.
+
 For a local run, configure the lease CLI's connection and credentials using its own environment
 variables. The runner passes those values through and acquires an isolated simulator lease or
 attaches using the lease identifier and token supplied to the CLI. Set all of the following:
@@ -107,7 +111,8 @@ The host-side checker verifies those routes before the journey launches or insta
 Both the playback and recording checks must pass. On timeout, the runner keeps the checker
 phase logs and refuses the journey.
 
-Pass `lease` as the simulator argument to `feasibility.ts` and `run-native-tests.ts` to use
+Pass `lease` as the simulator argument to `feasibility.ts`, `run-native-tests.ts`, or
+`video-journey.ts` to use
 the verified simulator. Use `node tools/media-test/simulator-media.ts --check-lease` to
 verify and release a lease before running a journey. Manually
 routed simulator clones are refused. The local Core Audio guard tracks the leased

@@ -2,6 +2,18 @@ name: Media hook feasibility
 on:
   pull_request:
     paths: ['MediaTesting/**', 'tools/media-test/**', 'expo/example/client/**', 'expo/ios/**', 'Package.*', '.github/workflows/media-feasibility.yml', '.github/actions/setup*/**', 'tools/simulator-runtime.ts']
+  workflow_dispatch:
+    inputs:
+      journey:
+        description: Run the full duplex job or one video journey
+        type: choice
+        default: all
+        options:
+          - all
+          - initial-local
+          - app-downgrade
+          - server-remote
+          - hold-resume
 permissions:
   contents: read
 concurrency:
@@ -9,6 +21,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   host-harness:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -20,24 +33,29 @@ jobs:
       - run: node --test tools/media-test/*.test.ts
   duplex:
     needs: host-harness
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.host-harness.result == 'success') }}
     runs-on: xcode-27
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: ./.github/actions/setup-simulator
       - name: Test host audio transport classification
+        if: ${{ !inputs.journey || inputs.journey == 'all' }}
         run: |
           perl -e 'alarm 120; exec @ARGV' swift test --package-path tools/media-test/HostAudioGuard \
             --scratch-path "$RUNNER_TEMP/host-audio-guard-tests" --jobs 2
       - name: Verify the hosted Core Audio routes
         run: node tools/media-test/simulator-media.ts /usr/bin/true
       - name: Test the example command protocol
+        if: ${{ !inputs.journey || inputs.journey == 'all' }}
         run: |
           perl -e 'alarm 120; exec @ARGV' swift test --package-path expo/example/client/modules/media-feasibility \
             --scratch-path "$RUNNER_TEMP/media-journey-protocol" --jobs 2 > "$RUNNER_TEMP/media-journey-protocol.log" 2>&1
       - name: Resolve the optional media package
+        if: ${{ !inputs.journey || inputs.journey == 'all' }}
         run: node tools/check-package-isolation.ts media
       - name: Compile excluded configurations without LiveKit
+        if: ${{ !inputs.journey || inputs.journey == 'all' }}
         run: |
           xcrun --sdk iphoneos swiftc -DDEBUG -target arm64-apple-ios26.0 -parse-as-library \
             -emit-module -module-name VoIPMediaTesting -emit-module-path "$RUNNER_TEMP/excluded-device.swiftmodule" MediaTesting/Sources/VoIPMediaTesting/*.swift
@@ -53,12 +71,14 @@ jobs:
           npm run prebuild -- --no-install
           cd ios
           perl -e 'alarm 300; exec @ARGV' pod install
-          node "$GITHUB_WORKSPACE/tools/expo-journey-bundle.ts" "$PWD"
+          node "$GITHUB_WORKSPACE/tools/expo-journey-bundle.ts" "$PWD" --media
       - name: Set the daily package cache scope
+        if: ${{ !inputs.journey || inputs.journey == 'all' }}
         id: package-cache-scope
         run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
       # Limit reuse to one day; GitHub evicts caches after seven inactive days.
       - name: Restore SwiftPM checkouts and binary artifacts
+        if: ${{ !inputs.journey || inputs.journey == 'all' }}
         id: packages
         uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
@@ -67,6 +87,7 @@ jobs:
             ${{ runner.temp }}/media-example-source-packages
           key: media-swiftpm-v1-${{ runner.os }}-${{ runner.arch }}-xcode27.1-${{ steps.package-cache-scope.outputs.day }}-${{ hashFiles('MediaTesting/Package.resolved', 'expo/package-lock.json', 'expo/example/client/package-lock.json', 'expo/example/client/ios/Podfile.lock') }}
       - name: Resolve optional Swift package dependencies
+        if: ${{ !inputs.journey || inputs.journey == 'all' }}
         working-directory: MediaTesting
         run: |
           /usr/bin/time -p perl -e 'alarm 300; exec @ARGV' xcodebuild -resolvePackageDependencies -scheme VoIPMediaTesting \
@@ -79,7 +100,7 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/media-build" -clonedSourcePackagesDirPath "$RUNNER_TEMP/media-example-source-packages" \
             -skipPackageUpdates > "$RUNNER_TEMP/media-example-resolution.log" 2>&1
       - name: Save resolved SwiftPM checkouts and binary artifacts
-        if: steps.packages.outputs.cache-hit != 'true'
+        if: ${{ steps.packages.outputs.cache-primary-key && steps.packages.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: |
@@ -101,10 +122,19 @@ jobs:
             --moduleResolution nodenext --types node --typeRoots ./expo/node_modules/@types \
             --skipLibCheck --allowImportingTsExtensions tools/media-test/*.ts
       - name: Check the independent video peer
+        if: ${{ !inputs.journey || inputs.journey == 'all' }}
         run: VIDEO_PEER_INTEGRATION=1 node --test tools/media-test/video-peer.integration.test.ts
       - name: Run the guarded simulator media tests
+        env:
+          MEDIA_JOURNEY: ${{ inputs.journey || 'all' }}
         run: |
           node tools/media-test/simulator-media.ts /bin/bash -euo pipefail <<'BASH'
+          scenarios=(initial-local app-downgrade server-remote hold-resume)
+          case "$MEDIA_JOURNEY" in
+            all) ;;
+            initial-local|app-downgrade|server-remote|hold-resume) scenarios=("$MEDIA_JOURNEY") ;;
+            *) echo 'Unknown video journey' >&2; exit 2 ;;
+          esac
           cleanup_simulator() {
             status=$?
             if [ -f "$RUNNER_TEMP/media-simulator" ]; then
@@ -125,37 +155,46 @@ jobs:
           echo "$id" > "$RUNNER_TEMP/media-simulator"
           perl -e 'alarm 120; exec @ARGV' xcrun simctl boot "$id"
           perl -e 'alarm 300; exec @ARGV' xcrun simctl bootstatus "$id" -b
-          (cd MediaTesting && /usr/bin/time -p node "$GITHUB_WORKSPACE/tools/media-test/build-timeout.ts" \
-            900 "$RUNNER_TEMP/media-build-diagnostics/native-tests" xcodebuild -showBuildTimingSummary build-for-testing \
-            -scheme VoIPMediaTesting -destination "platform=iOS Simulator,id=$id" \
-            -derivedDataPath "$RUNNER_TEMP/media-package" \
-            -clonedSourcePackagesDirPath "$RUNNER_TEMP/media-source-packages" -disableAutomaticPackageResolution -skipPackageUpdates \
-            -only-testing:VoIPMediaTestingTests \
-            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO > "$RUNNER_TEMP/media-package-build.log" 2>&1)
-          # Run the native package tests from the temporary directory.
-          (
-            cd "$RUNNER_TEMP"
-            id=$(cat "$RUNNER_TEMP/media-simulator")
-            shopt -s nullglob
-            test_runs=("$RUNNER_TEMP/media-package/Build/Products/"*.xctestrun)
-            if [ "${#test_runs[@]}" -ne 1 ]; then
-              echo "Expected one native test run specification, found ${#test_runs[@]}" >&2
-              exit 1
-            fi
-            xcrun --sdk iphonesimulator swiftc -swift-version 6 -target arm64-apple-ios26.0-simulator \
-              "$GITHUB_WORKSPACE/tools/media-test/SimulatorTestHost.swift" -o "$RUNNER_TEMP/native-test-host"
-            /usr/bin/time -p node "$GITHUB_WORKSPACE/tools/media-test/run-native-tests.ts" 300 \
-              "$RUNNER_TEMP/media-build-diagnostics/native-tests-run" "$id" "${test_runs[0]}" \
-              "$RUNNER_TEMP/native-test-host" > "$RUNNER_TEMP/media-package-tests.log" 2>&1
-            NATIVE_LAUNCHER_SPEC="${test_runs[0]}" NATIVE_LAUNCHER_SIMULATOR="$id" \
-              NATIVE_LAUNCHER_HOST="$RUNNER_TEMP/native-test-host" \
-              NATIVE_LAUNCHER_DIRECTORY="$RUNNER_TEMP/media-build-diagnostics/launcher-controls" \
-              node --test "$GITHUB_WORKSPACE/tools/media-test/native-test-launcher.integration.test.ts"
-          )
-          # Verify the example media hooks and continuous silence windows.
-          perl -e 'alarm 300; exec @ARGV' node tools/media-test/feasibility.ts "$id" \
-            "$RUNNER_TEMP/media-build/Build/Products/Debug-iphonesimulator/VoIPExample.app" \
-            "$RUNNER_TEMP/media-result-synthetic.json"
+          if [[ "$MEDIA_JOURNEY" == all ]]; then
+            (cd MediaTesting && /usr/bin/time -p node "$GITHUB_WORKSPACE/tools/media-test/build-timeout.ts" \
+              900 "$RUNNER_TEMP/media-build-diagnostics/native-tests" xcodebuild -showBuildTimingSummary build-for-testing \
+              -scheme VoIPMediaTesting -destination "platform=iOS Simulator,id=$id" \
+              -derivedDataPath "$RUNNER_TEMP/media-package" \
+              -clonedSourcePackagesDirPath "$RUNNER_TEMP/media-source-packages" -disableAutomaticPackageResolution -skipPackageUpdates \
+              -only-testing:VoIPMediaTestingTests \
+              CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO > "$RUNNER_TEMP/media-package-build.log" 2>&1)
+            # Run the native package tests from the temporary directory.
+            (
+              cd "$RUNNER_TEMP"
+              id=$(cat "$RUNNER_TEMP/media-simulator")
+              shopt -s nullglob
+              test_runs=("$RUNNER_TEMP/media-package/Build/Products/"*.xctestrun)
+              if [ "${#test_runs[@]}" -ne 1 ]; then
+                echo "Expected one native test run specification, found ${#test_runs[@]}" >&2
+                exit 1
+              fi
+              xcrun --sdk iphonesimulator swiftc -swift-version 6 -target arm64-apple-ios26.0-simulator \
+                "$GITHUB_WORKSPACE/tools/media-test/SimulatorTestHost.swift" -o "$RUNNER_TEMP/native-test-host"
+              /usr/bin/time -p node "$GITHUB_WORKSPACE/tools/media-test/run-native-tests.ts" 300 \
+                "$RUNNER_TEMP/media-build-diagnostics/native-tests-run" "$id" "${test_runs[0]}" \
+                "$RUNNER_TEMP/native-test-host" > "$RUNNER_TEMP/media-package-tests.log" 2>&1
+              NATIVE_LAUNCHER_SPEC="${test_runs[0]}" NATIVE_LAUNCHER_SIMULATOR="$id" \
+                NATIVE_LAUNCHER_HOST="$RUNNER_TEMP/native-test-host" \
+                NATIVE_LAUNCHER_DIRECTORY="$RUNNER_TEMP/media-build-diagnostics/launcher-controls" \
+                node --test "$GITHUB_WORKSPACE/tools/media-test/native-test-launcher.integration.test.ts"
+            )
+            # Verify the example media hooks and continuous silence windows.
+            perl -e 'alarm 300; exec @ARGV' node tools/media-test/feasibility.ts "$id" \
+              "$RUNNER_TEMP/media-build/Build/Products/Debug-iphonesimulator/VoIPExample.app" \
+              "$RUNNER_TEMP/media-result-synthetic.json"
+          fi
+          app="$RUNNER_TEMP/media-build/Build/Products/Debug-iphonesimulator/VoIPExample.app"
+          status=0
+          for scenario in "${scenarios[@]}"; do
+            perl -e 'alarm 300; exec @ARGV' node tools/media-test/video-journey.ts "$id" "$app" \
+              "$RUNNER_TEMP/media-result-video-$scenario.json" "$scenario" || status=1
+          done
+          exit "$status"
           BASH
       - name: Upload build timeout diagnostics
         if: always()

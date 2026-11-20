@@ -1,10 +1,10 @@
-import { markerCandidates, markerSlotConfidences } from '../../expo/src/testing/marker.ts';
+import { bestFixedGridMarkerDiagnostic, markerCandidates, markerSlotConfidences } from '../../expo/src/testing/marker.ts';
 import { cycleTransport, HOST_RECEIVER_STATS_POLL_MS, type TransportSnapshot } from './transport.ts';
 import type { MediaMarker } from '../../expo/src/testing/types.ts';
 
 export interface PCMCapture {
   readonly sampleRate: number;
-  readonly channels: readonly (readonly number[])[];
+  readonly channels: readonly (readonly number[] | Float32Array)[];
   readonly formatChanged: boolean;
   readonly transport?: readonly TransportSnapshot[];
 }
@@ -22,7 +22,7 @@ export function measureMarker(capture: PCMCapture, marker: MediaMarker, counterC
   const edgeTolerance = counterCoverage === 'host-poll'
     ? Math.floor(capture.sampleRate * HOST_RECEIVER_STATS_POLL_MS / 1000) : 0;
   const channels = capture.channels.map(samples => {
-    const pcm = Float32Array.from(samples);
+    const pcm = samples instanceof Float32Array ? samples : Float32Array.from(samples);
     let detection: import('../../expo/src/testing/types.ts').MarkerDetection | null = null;
     const cycles = [];
     let clean = false;
@@ -40,21 +40,9 @@ export function measureMarker(capture: PCMCapture, marker: MediaMarker, counterC
         confidences: scores, transport, accepted });
       if (accepted || (found && !capture.transport)) { detection = found; clean = accepted; break; }
     }
-    let offset = detection?.offsetSamples ?? 0;
-    let slots: readonly number[] = [];
-    const length = capture.sampleRate * marker.slotMs / 1000 * marker.frequencies.length;
-    if (detection) slots = markerSlotConfidences(pcm, capture.sampleRate, marker, offset, detection.slotStarts);
-    else {
-      // Best complete candidate retained on failure, including every weak slot. Never a pass.
-      let best = -1;
-      for (let ms = 0; ; ms++) {
-        const candidate = Math.floor(ms * capture.sampleRate / 1000);
-        if (candidate + length > pcm.length) break;
-        const scores = markerSlotConfidences(pcm, capture.sampleRate, marker, candidate);
-        const confidence = Math.min(...scores);
-        if (confidence > best) { best = confidence; offset = candidate; slots = scores; }
-      }
-    }
+    const { offset, scores: slots } = detection
+      ? { offset: detection.offsetSamples, scores: markerSlotConfidences(pcm, capture.sampleRate, marker, detection.offsetSamples, detection.slotStarts) }
+      : bestFixedGridMarkerDiagnostic(pcm, capture.sampleRate, marker);
     const tailMs = detection ? (pcm.length - detection.slotStarts.at(-1)! - capture.sampleRate * marker.slotMs / 1000) / capture.sampleRate * 1000 : 0;
     // Cover 150 ms post-roll plus the detector's 20 ms alignment uncertainty.
     const postRollObserved = detection !== null && tailMs >= 170;

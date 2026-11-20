@@ -358,8 +358,9 @@ rate/channel count, original energy across all channels and maximum absolute sam
 History is bounded to 8192 rows per stage and probe window; `droppedFrames` reports
 overflow, which consumers must reject. Beginning a window or retiring a gapped native
 silence attempt resets the callback history alongside PCM and counters. The example
-command mailbox includes these rows for host window selection; rows never fill missing
-intervals or change the shared-contract coverage, RMS or peak thresholds.
+command mailbox reports the dropped callback count and last callback time, and sends
+PCM on request. Callback evidence never fills missing intervals or changes coverage,
+RMS or peak thresholds.
 
 The example's success, failure and journey receipts also include `startup`, a
 `MediaStartupEvidence.Receipt` with the same observation clock identity. It retains the
@@ -504,7 +505,7 @@ server write has an uncertain outcome. Wait for each transition's confirmed SDK 
 writing the next update. Video evidence retains actual SDK `videoChanged` callbacks,
 source and native observation time, plus the terminal event
 after the call leaves the SDK snapshot. An initial connected snapshot has its own
-`readySnapshot` kind and never invents a change event. The optional fixture `initialVideo`
+`readySnapshot` kind. The performed hold and resume callbacks supply their original native times. The optional fixture `initialVideo`
 flag configures the incoming call's initial state; omitted input preserves audio-only setup.
 
 `readNativeVideoEvidence` reads that evidence from an already validated native mailbox
@@ -533,9 +534,9 @@ observations from the expected `far-end` participant. Remote renderers remain at
 through unpublish/EOS and Room teardown until explicit mailbox close. Bounded heartbeats,
 Room publication changes and replacement/late-subscription invalidation remain visible.
 `VideoCalibration.observation()` exports receiver-only evidence on its own clock; it does
-not infer source identity, synchronization or gate verdicts. Host source binding, transition
-clock brackets, permission controls and complete SDK-driven journey assertions are still
-required before these receipts establish decoded-media success.
+not infer source identity, synchronization or gate verdicts. The driver validates these
+receipts against independent host bindings and original SDK transition times. Camera-permission
+controls are tracked separately.
 
 `readNativeSyntheticVideo` validates the native synthetic receipts from a validated mailbox
 reply: clock/fixture identity, bounded source epochs and receiver rows, original seed fences,
@@ -551,6 +552,39 @@ caller's absolute deadline and cancellation signal. It retains host send/receive
 the original native clock sample. `hostVideoBoundary` preserves the resulting uncertainty;
 remote source timestamps remain on their own clock. Diagnostics retain native media/RTP
 timestamps without using them as event or latency anchors. Unsafe numeric evidence fails.
+
+The simulator driver runs initial video and local end, app upgrade and downgrade with a
+duplicate request, server upgrade and remote end, and hold and resume. Each invocation
+uses the same build and has its own 30-second acquisition and 180-second process budgets.
+The media feasibility build records LiveKit's signaling task start, name lookup, TCP connect,
+WebSocket upgrade, and native open callback when Foundation reports them. The fixture uses
+an IPv4 loopback listener and URL. Receipts include the observed address family and timing.
+Each reuses the audio Room and requires clean fresh duplex audio. Each audio phase starts
+one capture with new markers. The host, native decoder and native output each retain
+up to four seconds. The driver waits for actual native RTP counters to cover the end
+of those samples before requesting native PCM for analysis. A complete clean
+cycle and its post-roll must qualify at each observation point. Audio polling and PCM
+responses omit the video ledgers. In the downgrade scenario, one fresh capture
+verifies audio after downgrade and immediately before local end. Hold requires both
+video gates to suppress output while both sources advance, as well as native output
+and far-end audio evidence. When the system deactivates the last held call's audio, the
+native receipt records the SDK deactivation and a continuously observed stopped engine
+with no output callbacks. With an active engine, it requires the full output PCM silence
+window. Resume requires a new publication and fresh decoded video in
+both directions. When hold stopped the native audio engine, the fixture replaces the far-end
+audio publication after confirmed resume. It observes the old subscription retire before
+publishing its replacement and binds fresh audio to that replacement in the same Room.
+This clears queued playout before collecting the fresh audio marker.
+Upgrade and downgrade assert the actual AVAudioSession mode and available
+simulator output. The automatic receiver branch is exercised when the simulator reports a
+receiver. The existing route-policy tests cover explicit selections and external endpoints.
+
+Local end keeps both decoded observers through the 800 ms terminal window. Remote end
+requires fresh independently decoded audio and video in both directions before the
+actual far-end leave. The native receiver remains attached and the driver checks the SDK
+`remoteEnded` event, the final joined app producer ledger, the native teardown and absence
+of reconnect. The receipt records post-leave independent uplink coverage as
+`unexercised` with reason `single far-end peer`.
 
 The host `VideoPeer` uses the existing fixture Room and independent decoded `VideoStream`.
 Its metadata retention is bounded at 4096 rows per series, with overflow invalidating the

@@ -4,10 +4,10 @@ import { MediaPeer } from './peer.ts';
 import { serverBinary, startServer, type ServerVideoUpdate } from './server.ts';
 import type { NativeJourneyBudget } from './native-journey.ts';
 
-export type HarnessAction = { type: 'publish'; markerId: string } | { type: 'hold' } | { type: 'capture' } | { type: 'leave' } | { type: 'reconnect' };
+export type HarnessAction = { type: 'publish'; markerId: string; observePacing?: true } | { type: 'hold' } | { type: 'capture' } | { type: 'leave' } | { type: 'reconnect' };
 export interface JoinCredentials { url: string; token: string }
 /** Owns one local server/room and one far-end participant. stop() is safe to repeat. */
-export async function startHarness(directory: string, fixtureId: string) {
+export async function startHarness(directory: string, fixtureId: string, { captureSeconds }: { captureSeconds?: 3 | 4 } = {}) {
   mkdirSync(directory, { recursive: true, mode: 0o700 }); chmodSync(directory, 0o700);
   const lease = join(directory, 'lease.json');
   writeFileSync(lease, JSON.stringify({ pid: process.pid }), { flag: 'wx', mode: 0o600 });
@@ -15,7 +15,7 @@ export async function startHarness(directory: string, fixtureId: string) {
   try { server = await startServer(await serverBinary(directory), directory); }
   catch (error) { rmSync(lease); throw error; }
   let peer: MediaPeer;
-  try { peer = new MediaPeer(); }
+  try { peer = new MediaPeer(undefined, captureSeconds); }
   catch (error) { await server.close(); rmSync(lease, { force: true }); throw error; }
   let stopped: Promise<void> | undefined;
   const stop = () => stopped ??= (async () => { try { await peer.close(); } finally { await server.close(); rmSync(lease, { force: true }); rmSync(join(directory, 'join.json'), { force: true }); } })();
@@ -35,15 +35,20 @@ export async function startHarness(directory: string, fixtureId: string) {
       if (stopped) throw Error('Harness is stopped');
       return peer.openVideo(fixtureId, clockID);
     },
+    async renewAudioPublication(observeRetired: (retired: string) => Promise<void>) {
+      if (stopped) throw Error('Harness is stopped');
+      return peer.renewAudioPublication(observeRetired);
+    },
     async updateVideo(update: Omit<ServerVideoUpdate, 'fixtureId'>, budget: NativeJourneyBudget) {
       if (stopped) throw Error('Harness is stopped');
       await server.updateVideo({ ...update, fixtureId }, budget);
     },
+    downlinkPacing: () => peer.downlinkPacing(),
     observation: () => ({ receiver: status(), capture: peer.capture(), lifecycle: peer.lifecycleObservation(), reconnect: peer.reconnectEvidence() }),
     async act(action: HarnessAction): Promise<void> {
       if (stopped) throw Error('Harness is stopped');
       switch (action.type) {
-        case 'publish': peer.publish(action.markerId); break;
+        case 'publish': peer.publish(action.markerId, action.observePacing); break;
         case 'hold': peer.hold(); break;
         case 'capture': peer.beginCapture(); break;
         case 'leave': await peer.close(); break;

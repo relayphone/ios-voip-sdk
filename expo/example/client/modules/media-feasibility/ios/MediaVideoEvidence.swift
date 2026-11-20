@@ -4,7 +4,7 @@
   /// SDK observations on the existing native clock, independent of command completion.
   struct MediaSDKVideoEvidence: Codable {
     enum Source: String, Codable { case app, server }
-    enum Kind: String, Codable { case readySnapshot, changed, ended }
+    enum Kind: String, Codable { case readySnapshot, changed, held, resumed, ended }
     struct Event: Codable {
       let sequence: Int
       let kind: Kind
@@ -40,23 +40,41 @@
 
   /// No descriptions, raw domains, URLs or userInfo cross the fixture boundary.
   struct MediaJourneyFailure: Codable {
-    enum Operation: String, Codable { case prepare, video, command }
-    enum Category: String, Codable { case livekit, url, osStatus, posix, cocoa, other }
+    enum Operation: String, Codable { case prepare, connect, video, command }
+    enum Category: String, Codable { case cancelled, livekit, url, osStatus, posix, cocoa, other }
+    struct Cause: Codable {
+      let category: Category
+      let code: Int
+      init(_ error: any Error) {
+        let native = error as NSError
+        code = native.code
+        switch native.domain {
+        case _ where error is CancellationError: category = .cancelled
+        case "io.livekit.swift-sdk": category = .livekit
+        case NSURLErrorDomain: category = .url
+        case NSOSStatusErrorDomain: category = .osStatus
+        case NSPOSIXErrorDomain: category = .posix
+        case NSCocoaErrorDomain: category = .cocoa
+        default: category = .other
+        }
+      }
+    }
     let operation: Operation
     let category: Category
     let code: Int
+    let underlying: [Cause]?
     init(_ error: any Error, operation: Operation) {
       self.operation = operation
-      let native = error as NSError
-      code = native.code
-      switch native.domain {
-      case "io.livekit.swift-sdk": category = .livekit
-      case NSURLErrorDomain: category = .url
-      case NSOSStatusErrorDomain: category = .osStatus
-      case NSPOSIXErrorDomain: category = .posix
-      case NSCocoaErrorDomain: category = .cocoa
-      default: category = .other
+      let primary = Cause(error)
+      category = primary.category
+      code = primary.code
+      var causes: [Cause] = []
+      var next = (error as NSError).underlyingErrors.first
+      while let candidate = next, causes.count < 3 {
+        causes.append(Cause(candidate))
+        next = (candidate as NSError).underlyingErrors.first
       }
+      underlying = causes.isEmpty ? nil : causes
     }
   }
 #endif

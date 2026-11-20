@@ -74,9 +74,11 @@ test('serialized commands bind phase markers and every control to acknowledged n
     for (const action of [
       { operation: 'video', enabled: true, source: 'app' }, { operation: 'video', enabled: false, source: 'app' },
       { operation: 'hold', enabled: true }, { operation: 'armTeardown' }, { operation: 'end' },
-      { operation: 'snapshot' }, { operation: 'close' },
+      { operation: 'snapshot' }, { operation: 'audioProgress' }, { operation: 'audioSnapshot' }, { operation: 'close' },
     ] as const) await f.mailbox.request(action, budget());
     const video = f.received.filter(command => command.operation === 'video');
+    assert.ok(f.received.some(command => command.operation === 'audioProgress'));
+    assert.ok(f.received.some(command => command.operation === 'audioSnapshot'));
     assert.deepEqual(video.map(command => [command.enabled, command.videoSource]), [[true, 'app'], [false, 'app']]);
     for (const command of f.received) {
       assert.equal(command.fixtureId, scope.fixtureId); assert.equal(command.conversationId, scope.conversationId);
@@ -85,6 +87,16 @@ test('serialized commands bind phase markers and every control to acknowledged n
     assert.equal(new Set(f.received.map(command => command.id)).size, f.received.length);
     assert.ok(!readdirSync(f.directory).some(name => /command-/.test(name)));
     await assert.rejects(f.mailbox.request({ operation: 'snapshot' }, budget()), /closed/);
+  } finally { f.cleanup(); }
+});
+
+test('a native connection failure takes precedence over readiness', async () => {
+  const f = fixture();
+  try {
+    f.ready();
+    f.write('failure', { ...f.state, failure: { operation: 'connect', category: 'other', code: 1 } });
+    await assert.rejects(f.mailbox.connect(budget()), /reported failure: connect\/other\/1/);
+    await assert.rejects(f.mailbox.connect(budget()), /mailbox closed/);
   } finally { f.cleanup(); }
 });
 
@@ -144,6 +156,29 @@ test('snapshot cannot renew an existing phase anchor', async () => {
     await f.mailbox.request({ operation: 'beginPhase', phaseId: 'one' }, budget());
     f.state.phaseAtMs!++;
     await assert.rejects(f.mailbox.request({ operation: 'snapshot' }, budget()), /acknowledgement/);
+  } finally { f.cleanup(); }
+});
+
+test('the audio snapshot transfers both PCM observers and preserves the phase anchor', async () => {
+  const f = fixture();
+  const downlink = [[0.13, -0.24], [0.32, -0.41]];
+  const output = [[0.52, -0.61]];
+  try {
+    f.ready(); await f.mailbox.connect(budget());
+    f.serve(command => f.write('response', { ...f.state, commandId: command.id, phaseId: 'pcm',
+      observedAtMs: command.operation === 'beginPhase' ? 120 : 140, phaseAtMs: 120,
+      ...(command.operation === 'audioSnapshot' ? {
+        decoded: { pcm: { channels: downlink } }, output: { pcm: { channels: output } },
+      } : {}),
+    }));
+    const phase = await f.mailbox.request({ operation: 'beginPhase', phaseId: 'pcm' }, budget());
+    const snapshot = await f.mailbox.request({ operation: 'audioSnapshot' }, budget());
+    assert.equal(snapshot.phaseAtMs, phase.phaseAtMs);
+    assert.deepEqual(snapshot.evidence, {
+      ...f.state, commandId: f.received.at(-1)!.id, phaseId: 'pcm', observedAtMs: 140, phaseAtMs: 120,
+      decoded: { pcm: { channels: downlink.map(samples => Float32Array.from(samples)) } },
+      output: { pcm: { channels: output.map(samples => Float32Array.from(samples)) } },
+    });
   } finally { f.cleanup(); }
 });
 

@@ -14,7 +14,7 @@
     struct Action: Encodable {
       enum Kind: String, Encodable {
         case published, heldSourceStarted, muted, stopped, receiverAttached, receiverDetached,
-          roomDisconnected,
+          roomDisconnected, roomReconnecting, farEndDisconnected,
           remotePublished, remoteUnpublished, remoteUnsubscribed, receiverReplaced, lateSubscription
       }
       let kind: Kind
@@ -37,6 +37,7 @@
       let receivers: [Remote]
       let publicationSID: String?
       let publicationMuted: Bool?
+      let publicationStopping: Bool
       let roomConnected: Bool
       let remotePublications: [String]
       let epochs: [Epoch]
@@ -160,6 +161,21 @@
       }
     }
     func snapshot() async -> Snapshot {
+      let clock = ContinuousClock()
+      let deadline = clock.now + .milliseconds(100)
+      while true {
+        let snapshot = await snapshotOnce()
+        if clock.now >= deadline
+          || !snapshot.receivers.contains(where: { $0.observation.pendingDecodes > 0 })
+        {
+          return snapshot
+        }
+        do {
+          try await clock.sleep(until: min(deadline, clock.now + .milliseconds(2)))
+        } catch { return snapshot }
+      }
+    }
+    private func snapshotOnce() async -> Snapshot {
       var epochs = completed
       if let source, let anchor {
         let ledger = await source.snapshot()
@@ -178,6 +194,7 @@
         clockID: clock.id, observedAtMs: clock.milliseconds,
         receivers: decoded,
         publicationSID: publication?.sid.stringValue, publicationMuted: publication?.isMuted,
+        publicationStopping: publication != nil && epochs.last?.source.stoppedAtUs != nil,
         roomConnected: room.connectionState == .connected,
         remotePublications: room.remoteParticipants.values.filter {
           $0.identity?.stringValue == "far-end"

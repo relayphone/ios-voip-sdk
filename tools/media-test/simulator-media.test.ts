@@ -156,6 +156,7 @@ test('the shipped entry points refuse a local invocation before setup', () => {
     ['cli.ts', 'serve', 'unused-harness'],
     ['cli.ts', 'act', 'unused-harness', '{"type":"hold"}'],
     ['feasibility.ts', 'unused-simulator', 'unused-app', 'unused-result'],
+    ['video-journey.ts', 'unused-simulator', 'unused-app', 'unused-result', 'initial-local'],
     ['run-native-tests.ts', '30', 'unused-results', 'unused-simulator', 'unused-spec', 'unused-host'],
     ['simulator-media.ts', 'unused-command'],
     ['simulator-media.ts', '--check-lease'],

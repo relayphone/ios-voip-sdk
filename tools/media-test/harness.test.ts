@@ -159,6 +159,44 @@ test('real peer publishes markers, captures app audio, holds silent and leaves',
     await until(() => !app.status().trackAvailable);
   } finally { await app.close(); await harness.stop(); }
 });
+test('renewing far-end audio replaces its receiver without replacing the room or uplink', async () => {
+  const harness = await startHarness(directory('renew-audio'), 'renew-audio');
+  const app = new MediaPeer();
+  try {
+    await app.connect(harness.credentials('app'));
+    await until(() => app.status().readerLive && harness.status().readerLive);
+    const before = harness.status();
+    const original = app.status().activeTrackSid;
+    assert.ok(original && before.activeTrackSid);
+    const { retired, publication } = await harness.renewAudioPublication(async retiredSid => {
+      assert.equal(retiredSid, original);
+      await waitFor('Retired audio subscription', () => !app.status().trackAvailable || undefined);
+    });
+    assert.equal(retired, original);
+    assert.notEqual(publication, retired);
+    await waitFor('New audio subscription', () => app.status().readerLive && app.status().activeTrackSid === publication || undefined);
+    app.beginCapture();
+    const marker = createMarker('new-downlink');
+    await harness.act({ type: 'publish', markerId: marker.id, observePacing: true });
+    await until(() => app.status().receivedSamples >= 48_000 * 3);
+    assert.ok(detectMarker(Float32Array.from(app.capture().channels[0]!), 48_000, marker));
+    const sender = harness.downlinkPacing();
+    assert.ok(sender && sender.markerId === marker.id && sender.publication === publication);
+    assert.equal(sender.frames[0]?.offsetSamples, 0);
+    assert.ok(sender.frames.some(frame => frame.acceptedAtMs !== undefined && frame.acceptedAtMs >= frame.submittedAtMs));
+    const firstPackets = new Map<string, number>();
+    const hasPacketProgress = sender.rtp.some(row => row.streams.some(stream => {
+      const first = firstPackets.get(stream.streamID);
+      if (first === undefined) firstPackets.set(stream.streamID, stream.packetsSent);
+      return first !== undefined && stream.packetsSent > first;
+    }));
+    assert.ok(hasPacketProgress, `No outbound audio RTP progress: ${JSON.stringify(sender.rtp.slice(0, 4))}`);
+    assert.equal(harness.status().activeTrackSid, before.activeTrackSid);
+    assert.equal(harness.status().serverPid, before.serverPid);
+    assert.ok(harness.status().connected && app.status().connected);
+  } finally { await app.close(); await harness.stop(); }
+});
+
 test('full peer transport reconnect republishes real audio and requires fresh clean markers', async () => {
   const harness = await startHarness(directory('reconnect'), 'reconnect');
   const app = new MediaPeer();

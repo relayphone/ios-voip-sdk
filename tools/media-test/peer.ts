@@ -3,11 +3,28 @@ import { AudioFrame, AudioSource, AudioStream, ConnectionState, LocalAudioTrack,
 import { createMarker, emissionSamples } from '../../expo/src/testing/marker.ts';
 import type { PCMCapture } from './marker-evidence.ts';
 import { setTimeout as delay } from 'node:timers/promises';
-import { receiverStatistics } from './receiver-statistics.ts';
+import { receiverStatistics, senderAudioStatistics } from './receiver-statistics.ts';
 import { HOST_RECEIVER_STATS_POLL_MS, type TransportSnapshot } from './transport.ts';
 import { deadline } from './fixture-runtime.ts';
 import { PeerLifecycle } from './peer-lifecycle.ts';
 import { PeerReconnect } from './peer-reconnect.ts';
+
+interface SenderFrame {
+  offsetSamples: number;
+  submittedAtMs: number;
+  queuedBeforeMs: number;
+  acceptedAtMs?: number;
+}
+
+interface SenderPacing {
+  markerId: string;
+  publication: string;
+  startedAtMs: number;
+  frames: SenderFrame[];
+  rtp: { observedAtMs: number; streams: ReturnType<typeof senderAudioStatistics> }[];
+  droppedFrames: number;
+  droppedRtpRows: number;
+}
 
 /** One real far-end participant; observations remain independent of publication control. */
 export class MediaPeer {
@@ -15,8 +32,10 @@ export class MediaPeer {
   private videoPeer?: VideoPeer;
   private videoOpening = false;
   private source = new AudioSource(48_000, 1, 100);
+  private audioPublication?: string;
   private running = true;
   private emission: Int16Array | undefined;
+  private senderPacing?: SenderPacing;
   private cursor = 0;
   private publishing: Promise<void> | undefined;
   private readers: Promise<void>[] = [];
@@ -36,10 +55,12 @@ export class MediaPeer {
   private captureGeneration = 0;
   private statistics: Promise<void> | undefined;
   private readonly readStatistics: typeof receiverStatistics;
+  private readonly captureLimitSamples: number;
   private readonly lifecycle = new PeerLifecycle();
 
-  constructor(readStatistics: typeof receiverStatistics = receiverStatistics) {
+  constructor(readStatistics: typeof receiverStatistics = receiverStatistics, captureSeconds: 3 | 4 = 3) {
     this.readStatistics = readStatistics;
+    this.captureLimitSamples = captureSeconds * 48_000;
     this.reconnectControl = new PeerReconnect({
       available: () => this.running && this.status().connected,
       publications: () => [...this.room.localParticipant!.trackPublications.values()]
@@ -64,6 +85,12 @@ export class MediaPeer {
     this.room.on(RoomEvent.TrackUnpublished, (publication, participant) => {
       if (publication.kind === TrackKind.KIND_AUDIO) this.lifecycle.record('trackUnpublished', participant.identity, publication.sid);
     });
+    this.room.on(RoomEvent.TrackMuted, (publication, participant) => {
+      if (publication.kind === TrackKind.KIND_AUDIO) this.lifecycle.record('trackMuted', participant.identity, publication.sid);
+    });
+    this.room.on(RoomEvent.TrackUnmuted, (publication, participant) => {
+      if (publication.kind === TrackKind.KIND_AUDIO) this.lifecycle.record('trackUnmuted', participant.identity, publication.sid);
+    });
     this.room.on(RoomEvent.TrackUnsubscribed, track => {
       if (track.sid !== this.activeTrackSid) return;
       this.activeTrackSid = undefined;
@@ -87,7 +114,7 @@ export class MediaPeer {
           for (const sample of frame.data) {
             const value = sample / 32768;
             this.energy += value * value;
-            if (this.received.length < 48_000 * 3) this.received.push(value);
+            if (this.received.length < this.captureLimitSamples) this.received.push(value);
           }
           this.receivedSamples += frame.data.length;
         }
@@ -101,8 +128,15 @@ export class MediaPeer {
     this.statistics = (async () => {
       while (this.running) {
         const generation = this.captureGeneration;
+        const pacing = this.senderPacing;
         try {
-          const row = await this.readStatistics(this.room, () => this.receivedSamples);
+          const row = await this.readStatistics(this.room, () => this.receivedSamples, pacing && (stats => {
+            if (pacing !== this.senderPacing) return;
+            // A room stats report can contain the retired and replacement RTP streams.
+            // Keep them separate so the receipt can show which stream advanced.
+            if (pacing.rtp.length < 128) pacing.rtp.push({ observedAtMs: performance.now(), streams: senderAudioStatistics(stats) });
+            else pacing.droppedRtpRows++;
+          }));
           const previous = this.transport.at(-1);
           if (this.running && generation === this.captureGeneration && row &&
               (!previous || row.streamID !== previous.streamID || row.timestamp > previous.timestamp)) this.transport.push(row);
@@ -110,13 +144,21 @@ export class MediaPeer {
         if (this.running) await delay(HOST_RECEIVER_STATS_POLL_MS);
       }
     })();
-    const options = new TrackPublishOptions(); options.source = TrackSource.SOURCE_MICROPHONE;
-    await deadline(15_000, 'Peer publish', () => this.room.localParticipant!.publishTrack(LocalAudioTrack.createAudioTrack('marker', this.source), options));
+    await deadline(15_000, 'Peer publish', () => this.publishAudio());
     this.publishing = (async () => {
       while (this.running) {
+        const pacing = this.senderPacing;
+        let frame: SenderFrame | undefined;
+        if (pacing) {
+          if (pacing.frames.length < 1200) {
+            frame = { offsetSamples: this.cursor, submittedAtMs: performance.now(), queuedBeforeMs: this.source.queuedDuration };
+            pacing.frames.push(frame);
+          } else pacing.droppedFrames++;
+        }
         const pcm = this.emission?.slice(this.cursor, this.cursor + 480) ?? new Int16Array(480);
         this.cursor = this.emission ? (this.cursor + 480) % this.emission.length : 0;
         await this.source.captureFrame(new AudioFrame(pcm, 48_000, 1, 480));
+        if (frame) frame.acceptedAtMs = performance.now();
       }
     })().catch(() => { this.publicationFailed = true; });
   }
@@ -125,12 +167,51 @@ export class MediaPeer {
   /** Incomplete attempts survive errors; recovery still requires a fresh marker gate. */
   reconnectEvidence() { return this.reconnectControl.evidence(); }
 
-  publish(markerId: string): void {
+  private async publishAudio() {
+    const participant = this.room.localParticipant;
+    if (!participant) throw Error('Peer is unavailable');
+    const track = LocalAudioTrack.createAudioTrack('marker', this.source);
+    try {
+      const publication = await participant.publishTrack(track,
+        new TrackPublishOptions({ source: TrackSource.SOURCE_MICROPHONE }));
+      if (!publication.sid) throw Error('Missing peer audio publication identity');
+      this.audioPublication = publication.sid;
+      return publication.sid;
+    } catch (error) { await track.close(false); throw error; }
+  }
+
+  /** Start a new receiver stream in the same Room while keeping the paced audio source. */
+  async renewAudioPublication(observeRetired: (retired: string) => Promise<void>) {
+    const participant = this.room.localParticipant;
+    const audio = [...(participant?.trackPublications.values() ?? [])]
+      .filter(publication => publication.track instanceof LocalAudioTrack);
+    const [previous] = audio;
+    if (!this.running || !participant || audio.length !== 1 || !previous?.sid ||
+      !(previous.track instanceof LocalAudioTrack)) throw Error('Peer audio publication is unavailable');
+    const { sid: retired, track } = previous;
+    await participant.unpublishTrack(retired, false);
+    await track.close(false);
+    await observeRetired(retired);
+    if (!this.running) throw Error('Peer is closed');
+    const publication = await this.publishAudio();
+    if (publication === retired) throw Error('Peer reused the retired audio publication');
+    return { retired, publication };
+  }
+
+  publish(markerId: string, observePacing = false): void {
     if (!this.status().connected || this.publicationFailed) throw Error('Peer is unavailable');
     this.emission = Int16Array.from(emissionSamples(createMarker(markerId), 48_000, 48_000 / 50 * 51), value => Math.round(value * 32767));
     this.cursor = 0; this.source.clearQueue();
+    this.senderPacing = observePacing && this.audioPublication ? {
+      markerId, publication: this.audioPublication, startedAtMs: performance.now(), frames: [], rtp: [], droppedFrames: 0, droppedRtpRows: 0,
+    } : undefined;
   }
-  hold(): void { if (!this.running) throw Error('Peer is closed'); this.emission = undefined; this.cursor = 0; this.source.clearQueue(); }
+  downlinkPacing() {
+    const pacing = this.senderPacing;
+    return pacing && { ...pacing, observedAtMs: performance.now(), sampleRate: 48_000, frameSamples: 480,
+      frames: pacing.frames.map(frame => ({ ...frame })), rtp: pacing.rtp.slice() };
+  }
+  hold(): void { if (!this.running) throw Error('Peer is closed'); this.emission = undefined; this.senderPacing = undefined; this.cursor = 0; this.source.clearQueue(); }
   beginCapture(): void { this.received = []; this.receivedSamples = 0; this.energy = 0; this.transport = []; this.captureGeneration++; }
   capture(): PCMCapture { return { sampleRate: 48_000, channels: [this.received.slice()], formatChanged: false, transport: this.transport.slice() }; }
   /** Survives beginCapture(), so resetting a phase cannot erase teardown evidence. */
@@ -139,7 +220,7 @@ export class MediaPeer {
     return { connected: this.room.connectionState === ConnectionState.CONN_CONNECTED,
       readerLive: this.readerLive && !this.readerFailed, trackAvailable: this.trackAvailable,
       readerFailed: this.readerFailed, publicationFailed: this.publicationFailed,
-      receivedSamples: this.receivedSamples, energy: this.energy, rms: this.receivedSamples ? Math.sqrt(this.energy / this.receivedSamples) : null };
+      activeTrackSid: this.activeTrackSid, receivedSamples: this.receivedSamples, energy: this.energy, rms: this.receivedSamples ? Math.sqrt(this.energy / this.receivedSamples) : null };
   }
   /** One video phase shares this audio peer's authenticated Room and lifetime. */
   async openVideo(fixture: string, clockID: string): Promise<VideoPeer> {

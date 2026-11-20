@@ -58,18 +58,19 @@ public final class VideoCalibration: Sendable {
     public let observedAtUs: UInt64
     /// Overflow or in-flight decoding makes the observation incomplete.
     public let overflow: Bool
+    /// Decoder callbacks still in flight at the observation cutoff.
+    public let pendingDecodes: Int
     /// Maximum simultaneous decoder callbacks.
     public let queueHighWaterMark: Int
   }
   /// Snapshots without requiring a local source or inventing remote clock synchronization.
   public func observation() -> Observation {
-    let snapshot = state.withLock {
-      ($0.arrivals, $0.events, $0.overflow || $0.pending != 0, $0.highWater)
-    }
+    let (snapshot, atUs) = state.withLock { ($0, nowUs) }
     return Observation(
-      clockID: clock.id, arrivals: snapshot.0.sorted { $0.atUs < $1.atUs },
-      lifecycle: snapshot.1, observedAtUs: nowUs, overflow: snapshot.2,
-      queueHighWaterMark: snapshot.3)
+      clockID: clock.id, arrivals: snapshot.arrivals.sorted { $0.atUs < $1.atUs },
+      lifecycle: snapshot.events, observedAtUs: atUs,
+      overflow: snapshot.overflow || snapshot.pending != 0, pendingDecodes: snapshot.pending,
+      queueHighWaterMark: snapshot.highWater)
   }
   /// A complete fixed window's unique, ledger-matched decoded frame rate.
   public struct Window: Codable, Sendable {
@@ -191,10 +192,10 @@ public final class VideoCalibration: Sendable {
   }
   /// Records callback entry and backlog before native pixel conversion or copying.
   public func receiveDecoded(_ decode: () -> Image) {
-    let at = nowUs
-    state.withLock {
+    let at = state.withLock {
       $0.pending += 1
       $0.highWater = max($0.highWater, $0.pending)
+      return nowUs
     }
     let image = decode()
     state.withLock {

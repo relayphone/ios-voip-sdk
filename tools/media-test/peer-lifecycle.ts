@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-export type PeerLifecycleKind = 'participantConnected' | 'participantDisconnected' | 'trackPublished' | 'trackUnpublished';
+export type PeerLifecycleKind = 'participantConnected' | 'participantDisconnected' | 'trackPublished' | 'trackUnpublished' | 'trackMuted' | 'trackUnmuted';
 export interface PeerLifecycleEvent {
   readonly kind: PeerLifecycleKind;
   readonly identity: string;

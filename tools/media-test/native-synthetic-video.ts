@@ -56,7 +56,7 @@ function plane(value: unknown): NativeVideoPlane {
   return Object.freeze({ width, height, stride, byteCount, complete, minimum, maximum, sample: Object.freeze(sample) });
 }
 const actionKinds = ['published', 'heldSourceStarted', 'muted', 'stopped', 'receiverAttached', 'receiverDetached',
-  'roomDisconnected', 'remotePublished', 'remoteUnpublished', 'remoteUnsubscribed', 'receiverReplaced', 'lateSubscription'] as const;
+  'roomDisconnected', 'roomReconnecting', 'farEndDisconnected', 'remotePublished', 'remoteUnpublished', 'remoteUnsubscribed', 'receiverReplaced', 'lateSubscription'] as const;
 const lifecycleKinds = ['receiverAttached', 'receiverHeartbeat', 'receiverDetached', 'publicationMuted', 'publicationUnpublished', 'republished'] as const;
 export type NativeVideoActionKind = typeof actionKinds[number];
 export type NativeVideoLifecycleKind = typeof lifecycleKinds[number];
@@ -91,6 +91,7 @@ export function readNativeSyntheticVideo(reply: NativeJourneyReply, fixtureID: s
   if (!Number.isSafeInteger(Math.floor(endUs))) return invalid();
   const publication = v.publicationSID == null ? null : text(v.publicationSID);
   const publicationMuted = v.publicationMuted == null ? null : bool(v.publicationMuted);
+  const publicationStopping = v.publicationStopping === undefined ? false : bool(v.publicationStopping);
   if ((publication === null) !== (publicationMuted === null)) return invalid();
   const epochs = rows(v.epochs, 64).map((value, index): NativeVideoEpoch => {
     const e = object(value), a = object(e.anchor), s = object(e.source), epoch = integer(e.epoch, 64);
@@ -157,7 +158,8 @@ export function readNativeSyntheticVideo(reply: NativeJourneyReply, fixtureID: s
   });
   const remotePublications = rows(v.remotePublications, 64).map(text);
   if (new Set(decoded.map(r => r.publication)).size !== decoded.length || new Set(remotePublications).size !== remotePublications.length ||
-      publication !== null && !epochs.some(e => e.publication === publication && e.source.stoppedAtUs === undefined)) return invalid();
+      publication === null && publicationStopping || publication !== null &&
+        (epochs.at(-1)?.publication !== publication || (epochs.at(-1)?.source.stoppedAtUs !== undefined) !== publicationStopping)) return invalid();
   return Object.freeze({ clockID, fixture, observedAtMs, publication, publicationMuted, roomConnected: bool(v.roomConnected),
     remotePublications: Object.freeze(remotePublications), epochs: Object.freeze(epochs), receivers: Object.freeze(decoded), actions: Object.freeze(actions) });
 }
