@@ -35,6 +35,7 @@ function verifyPush(apk: string, output: string): void {
   const log = openSync(join(output, 'push-logcat.txt'), 'w');
   const logcat = spawn(adbPath(), ['-s', serial, 'logcat', '-b', 'all', '-T', '1'],
     { stdio: ['ignore', log, log] });
+  logcat.on('error', (error) => console.warn(`Could not capture push logcat: ${error.message}`));
   closeSync(log);
   try {
     const result = adb(['shell', 'am', 'instrument', '-w',
@@ -75,6 +76,29 @@ const adb = (args: string[], timeout = 5_000) => execFileSync(
   adbPath(), ['-s', serial, ...args],
   { encoding: 'utf8', timeout, maxBuffer: 8 * 1024 * 1024, killSignal: 'SIGKILL', stdio: ['ignore', 'pipe', 'pipe'] },
 ).trim();
+
+async function prepareCallStyle(): Promise<void> {
+  if (adb(['shell', 'getprop', 'ro.build.version.sdk']) !== '34') return;
+
+  // The Android 14 image can drop CallStyle notifications during a resource overlay refresh.
+  // Apply a fixed system palette before installing the app and wait for Android to resolve it.
+  const theme = JSON.stringify({
+    'android.theme.customization.color_source': 'preset',
+    'android.theme.customization.system_palette': '676767',
+    'android.theme.customization.theme_style': 'MONOCHROMATIC',
+  });
+  adb(['shell', 'settings', '--user', '0', 'put', 'secure', 'theme_customization_overlay_packages', `'${theme}'`]);
+  const deadline = performance.now() + 30_000;
+  while (performance.now() < deadline) {
+    const accent = adb(['shell', 'cmd', 'overlay', 'lookup', '--user', '0', 'android', 'android:color/system_accent1_500']);
+    if (/^#ff([0-9a-f]{2})\1\1$/iu.test(accent)) {
+      adb(['shell', 'am', 'wait-for-broadcast-barrier', '--flush-application-threads'], 30_000);
+      return;
+    }
+    await delay(250);
+  }
+  throw new Error('Android 14 did not apply the preset notification test palette');
+}
 
 function startEmulator(output: string, attempt: number): Emulator {
   const started = performance.now();
@@ -123,6 +147,7 @@ function startEmulator(output: string, attempt: number): Emulator {
         if (adb(['shell', 'service', 'check', 'telecom']) !== 'Service telecom: found') {
           throw new Error('Telecom service is unavailable');
         }
+        await prepareCallStyle();
         ready = true;
       } finally {
         const summary = process.env.GITHUB_STEP_SUMMARY;

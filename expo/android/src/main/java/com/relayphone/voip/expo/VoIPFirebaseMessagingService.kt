@@ -1,7 +1,6 @@
 package com.relayphone.voip.expo
 
 import android.content.Context
-import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlin.time.Clock
@@ -29,19 +28,12 @@ open class VoIPFirebaseMessagingService : FirebaseMessagingService() {
                 PushEnvelope.Unrelated -> false
                 PushEnvelope.Invalid, PushEnvelope.Ineligible -> true
                 is PushEnvelope.Invitation -> {
-                    Log.d("VoIPPush", "Received invitation")
                     val job = CallHost.scope.async {
-                        try {
-                            val result = CallHost.get(context).binding.reportPush(push)
-                            Log.d("VoIPPush", "Admission result: ${result?.javaClass?.simpleName}")
-                        } catch (_: SecurityException) {
-                            Log.d("VoIPPush", "Telecom registration was denied")
-                        }
+                        try { CallHost.get(context).binding.reportPush(push) }
+                        catch (_: SecurityException) { /* Telecom registration was denied. */ }
                     }
                     // Give cold Telecom admission time to complete before FCM releases the service.
-                    if (withTimeoutOrNull(5.seconds) { job.await() } == null) {
-                        Log.d("VoIPPush", "Messaging service admission wait expired")
-                    }
+                    withTimeoutOrNull(5.seconds) { job.await() }
                     true
                 }
             }

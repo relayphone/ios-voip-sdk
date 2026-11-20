@@ -3,7 +3,6 @@ package com.relayphone.voip.expo
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.SystemClock
-import android.util.Log
 import com.relayphone.voip.AccountID
 import com.relayphone.voip.CallingLine
 import com.relayphone.voip.LineID
@@ -13,8 +12,6 @@ import kotlin.time.Instant
 import kotlinx.coroutines.*
 
 internal class CallHost private constructor(context: Context) {
-    init { Log.d("VoIPPush", "Starting CallHost") }
-
     private val manager = context.packageManager
     private val app = manager.getApplicationInfo(context.packageName, PackageManager.GET_META_DATA)
     val line = app.metaData?.getString("com.relayphone.voip.accountID")?.removePrefix("voip:")?.let {
@@ -23,9 +20,7 @@ internal class CallHost private constructor(context: Context) {
     }
     val presentation = IncomingCallNotification(context)
     val binding = CallBinding(scope, line, clock, NativeCallMedia.start(), presentation) { submit ->
-        Log.d("VoIPPush", "Registering with Telecom")
         val telecom = AndroidTelecomSystem.register(context, 34, true, submit)
-        Log.d("VoIPPush", "Registered with Telecom")
         CallSystem(telecom, telecom::answerWithReceipt, telecom::answerFromNotification)
     }
     val push by lazy {

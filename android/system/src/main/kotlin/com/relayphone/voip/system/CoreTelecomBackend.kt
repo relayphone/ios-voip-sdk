@@ -3,7 +3,6 @@ package com.relayphone.voip.system
 import android.net.Uri
 import android.os.ParcelUuid
 import android.telecom.DisconnectCause
-import android.util.Log
 import androidx.core.telecom.CallAttributesCompat
 import androidx.core.telecom.CallControlResult
 import androidx.core.telecom.CallControlScope
@@ -44,7 +43,6 @@ internal class CoreTelecomBackend(
                     onSetActive = { callbacks.setHeld(false) },
                     onSetInactive = { callbacks.setHeld(true) },
                 ) {
-                    Log.d("VoIPPush", "Telecom admitted ${call.direction} call")
                     admitted(Control(this))
                     if (call.direction != Direction.INCOMING || !customIncomingPresentation)
                         notificationPosted = notification.post(call)

@@ -11,7 +11,6 @@ import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
@@ -85,11 +84,7 @@ internal class IncomingCallNotification(private val context: Context) : Presenta
 
     private fun post(id: CallID, ring: Ring) {
         val manager = manager ?: return
-        val blocked = readiness()
-        if (blocked != null) {
-            Log.d("VoIPPush", "Notification unavailable: $blocked")
-            return
-        }
+        if (readiness() != null) return
         val sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
         manager.createNotificationChannel(NotificationChannel(CHANNEL, context.getString(R.string.voip_incoming_channel),
             NotificationManager.IMPORTANCE_HIGH).apply {
@@ -115,12 +110,9 @@ internal class IncomingCallNotification(private val context: Context) : Presenta
             builder.addAction(Notification.Action.Builder(null, context.getString(R.string.voip_answer), answer).build())
         }
         try {
-            Log.d("VoIPPush", "Calling NotificationManager.notify")
             manager.notify(id.value, ID, builder.build().apply { flags = flags or Notification.FLAG_INSISTENT })
-            Log.d("VoIPPush", "NotificationManager.notify returned")
         } catch (_: SecurityException) {
             // Permission can change between checking readiness and posting.
-            Log.d("VoIPPush", "Notification posting permission was denied")
         }
     }
 
