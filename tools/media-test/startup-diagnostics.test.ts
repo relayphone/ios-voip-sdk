@@ -74,6 +74,26 @@ test('serialized receipts distinguish delivery, queue consumption and actual eng
   }
 });
 
+test('native tap events accept decoded and output labels and reject malformed labels', () => {
+  const observations = [
+    row('prepareCompleted', 10), row('activationEntered', 20),
+    row('activationEnqueued', 30, { _0: 'enqueued' }), row('activationHandlerEntered', 40),
+    row('engineAvailabilityObserved', 50, { _0: 'running' }),
+  ];
+  assert.deepEqual(diagnoseNativeStartup(report([
+    ...observations,
+    row('tapInstalled', 60, { _0: 'decoded' }), row('tapInstalled', 61, { _0: 'output' }),
+    row('firstCallback', 62, { _0: 'decoded' }), row('firstCallback', 63, { _0: 'output' }),
+  ])), { clockID, boundary: 'engineRunning' });
+  for (const event of ['tapInstalled', 'firstCallback']) {
+    for (const label of [{ toString: 0 }, 'unsupported', undefined]) {
+      const replay = report([...observations, row(event, 60, { _0: label })]);
+      assert.deepEqual(diagnoseNativeStartup(replay), { boundary: 'unavailable' });
+      assert.throws(() => assertNativePassed(replay), /Native media check failed at duplex; startup=unavailable/);
+    }
+  }
+});
+
 test('enqueue result is measured and handler entry may race the post-yield receipt', () => {
   for (const [outcome, boundary] of [['dropped', 'activationDropped'], ['terminated', 'activationStreamTerminated']] as const) {
     assert.equal(diagnoseNativeStartup(report([row('prepareCompleted', 10), row('activationEntered', 20),
