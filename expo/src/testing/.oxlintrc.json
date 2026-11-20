@@ -2,6 +2,12 @@
   "extends": ["../../../.oxlintrc.json"],
   "overrides": [
     {
+      "files": ["marker.ts"],
+      "rules": {
+        "landmines-types/no-explicit-return-types": "error"
+      }
+    },
+    {
       "files": ["receipt.ts"],
       "rules": {
         "anti-slop/no-conditional-empty-object-spread": "error",
