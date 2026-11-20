@@ -166,29 +166,26 @@ describe("withVoIPConversationsIos call preview Live Activities", () => {
 });
 
 describe("addCallPreviewWidget", () => {
-  for (const [config, version, buildNumber] of [
-    [app, "2.3.4", "17"],
-    [{ name: "test-app", slug: "test-app" }, "1.0.0", "1"],
-  ] as const) {
-    it(`uses the app config versions: ${version}/${buildNumber}`, () => {
-      const project = addCallPreviewWidget(templateProject(), {
-        projectName: "HelloWorld",
-        bundleIdentifier: "com.example.calls",
-        config,
-      });
-      const widget = fields(project.pbxTargetByName(`"${WIDGET_TARGET}"`));
-      const ids = configurationIDs(project, widget);
-      assert.equal(ids.length, 2);
-      for (const id of ids) {
-        assert.partialDeepStrictEqual(section(project, "XCBuildConfiguration").get(id), {
-          buildSettings: {
-            MARKETING_VERSION: version,
-            CURRENT_PROJECT_VERSION: buildNumber,
-          },
-        });
-      }
+  it("uses default widget build versions when app versions are omitted", () => {
+    const project = addCallPreviewWidget(templateProject(), {
+      projectName: "HelloWorld",
+      bundleIdentifier: "com.example.calls",
+      config: { name: "test-app", slug: "test-app" },
     });
-  }
+    const widget = fields(project.pbxTargetByName(`"${WIDGET_TARGET}"`));
+    const ids = configurationIDs(project, widget);
+    const configurations = section(project, "XCBuildConfiguration");
+    assert.equal(ids.length, 2);
+    for (const id of ids) {
+      assert.partialDeepStrictEqual(configurations.get(id), {
+        buildSettings: {
+          MARKETING_VERSION: "1.0.0",
+          CURRENT_PROJECT_VERSION: "1",
+        },
+      });
+    }
+  });
+
   it("adds the widget extension, embedded in the app, and the shared Join intent", () => {
     const project = addCallPreviewWidget(templateProject(), {
       projectName: "HelloWorld",
@@ -217,6 +214,8 @@ describe("addCallPreviewWidget", () => {
         INFOPLIST_FILE: "CallPreviewWidget/Info.plist",
         IPHONEOS_DEPLOYMENT_TARGET: "26.0",
         SWIFT_VERSION: "6.0",
+        MARKETING_VERSION: "2.3.4",
+        CURRENT_PROJECT_VERSION: "17",
       });
     }
     assert.equal((project.writeSync()).includes("undefined"), false);
