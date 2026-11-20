@@ -64,7 +64,7 @@ export async function verifyOnEmulator(
 const serial = 'emulator-5554';
 const adb = (args: string[], timeout = 5_000) => execFileSync(
   join(process.env.ANDROID_HOME!, 'platform-tools', 'adb'), ['-s', serial, ...args],
-  { encoding: 'utf8', timeout, killSignal: 'SIGKILL', stdio: ['ignore', 'pipe', 'pipe'] },
+  { encoding: 'utf8', timeout, maxBuffer: 8 * 1024 * 1024, killSignal: 'SIGKILL', stdio: ['ignore', 'pipe', 'pipe'] },
 ).trim();
 
 function startEmulator(output: string, attempt: number): Emulator {
@@ -128,7 +128,7 @@ function startEmulator(output: string, attempt: number): Emulator {
     },
     async stop() {
       try {
-        writeFileSync(join(output, `logcat-${attempt}.txt`), adb(['logcat', '-d', '-t', '500']));
+        writeFileSync(join(output, `logcat-${attempt}.txt`), adb(['logcat', '-d', '-t', '5000']));
       } catch {
         // The emulator log is still available if ADB never came online.
       }
