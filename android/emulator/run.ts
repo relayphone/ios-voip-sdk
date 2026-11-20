@@ -30,12 +30,20 @@ function verifyExample(apk: string): void {
   throw new Error('The Expo example did not report the calling journeys');
 }
 
-function verifyPush(apk: string): void {
+function verifyPush(apk: string, output: string): void {
   adb(['install', '-r', apk], 45_000);
-  const result = adb(['shell', 'am', 'instrument', '-w',
-    'com.example.voipconversations.test/androidx.test.runner.AndroidJUnitRunner'], 150_000);
-  console.log(result);
-  if (!/^OK \(1 test\)$/mu.test(result)) throw new Error('Expo push instrumentation failed');
+  const log = openSync(join(output, 'push-logcat.txt'), 'w');
+  const logcat = spawn(adbPath(), ['-s', serial, 'logcat', '-b', 'all', '-T', '1'],
+    { stdio: ['ignore', log, log] });
+  closeSync(log);
+  try {
+    const result = adb(['shell', 'am', 'instrument', '-w',
+      'com.example.voipconversations.test/androidx.test.runner.AndroidJUnitRunner'], 150_000);
+    console.log(result);
+    if (!/^OK \(1 test\)$/mu.test(result)) throw new Error('Expo push instrumentation failed');
+  } finally {
+    logcat.kill();
+  }
 }
 
 export async function verifyOnEmulator(
@@ -62,8 +70,9 @@ export async function verifyOnEmulator(
 }
 
 const serial = 'emulator-5554';
+const adbPath = () => join(process.env.ANDROID_HOME!, 'platform-tools', 'adb');
 const adb = (args: string[], timeout = 5_000) => execFileSync(
-  join(process.env.ANDROID_HOME!, 'platform-tools', 'adb'), ['-s', serial, ...args],
+  adbPath(), ['-s', serial, ...args],
   { encoding: 'utf8', timeout, maxBuffer: 8 * 1024 * 1024, killSignal: 'SIGKILL', stdio: ['ignore', 'pipe', 'pipe'] },
 ).trim();
 
@@ -161,7 +170,7 @@ if (import.meta.main) {
           '-Pandroid.enableAdditionalTestOutput=true', '--no-daemon', '--max-workers=2', '--console=plain',
         ], { stdio: 'inherit', env: { ...process.env, ANDROID_SERIAL: serial } });
         if (process.env.EXPO_CALL_JOURNEY_APK) verifyExample(process.env.EXPO_CALL_JOURNEY_APK);
-        if (process.env.EXPO_PUSH_TEST_APK) verifyPush(process.env.EXPO_PUSH_TEST_APK);
+        if (process.env.EXPO_PUSH_TEST_APK) verifyPush(process.env.EXPO_PUSH_TEST_APK, process.env.EMULATOR_OUTPUT!);
       } catch (error) {
         console.error('::error title=Product verification::Android instrumentation failed. See the Gradle log and test artifacts.');
         throw error;
