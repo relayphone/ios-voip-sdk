@@ -158,38 +158,45 @@
     func captureRetainsSilentInputClockAndReleasesOwnedNodes() throws {
       let engine = AVAudioEngine()
       let input = AVAudioMixerNode()
+      let microphoneMixer = AVAudioMixerNode()
       let destination = AVAudioMixerNode()
       engine.attach(input)
+      engine.attach(microphoneMixer)
       engine.attach(destination)
       let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
+      engine.connect(input, to: microphoneMixer, fromBus: 0, toBus: 0, format: format)
+      engine.connect(microphoneMixer, to: destination, fromBus: 0, toBus: 0, format: format)
       let hooks = MarkerAudioEngine(
         probe: MediaAudioProbe(), frequencies: Array(repeating: 650, count: 12))
       #expect(
         hooks.engineWillConnectInput(
           engine, src: input, dst: destination, format: format, context: [:]) == 0)
       let clock = try #require(
-        engine.inputConnectionPoint(for: destination, inputBus: 0)?.node as? AVAudioMixerNode)
+        engine.inputConnectionPoint(for: microphoneMixer, inputBus: 0)?.node as? AVAudioMixerNode)
       #expect(clock.outputVolume == 0)
       #expect(engine.inputConnectionPoint(for: clock, inputBus: 0)?.node === input)
+      #expect(engine.inputConnectionPoint(for: destination, inputBus: 0)?.node === microphoneMixer)
       let source = try #require(
-        engine.inputConnectionPoint(for: destination, inputBus: 1)?.node as? AVAudioSourceNode)
+        engine.inputConnectionPoint(for: microphoneMixer, inputBus: 1)?.node as? AVAudioSourceNode)
       #expect(!engine.isRunning)
       #expect(hooks.generatedSamples == 0)
+      // The mixer observer reconnects the hardware input before rebuilding the marker branch.
+      engine.connect(input, to: microphoneMixer, fromBus: 0, toBus: 0, format: format)
       #expect(
         hooks.engineWillConnectInput(
           engine, src: input, dst: destination, format: format, context: [:]) == 0)
       #expect(source.engine == nil)
       #expect(clock.engine == nil)
       let replacementClock = try #require(
-        engine.inputConnectionPoint(for: destination, inputBus: 0)?.node as? AVAudioMixerNode)
+        engine.inputConnectionPoint(for: microphoneMixer, inputBus: 0)?.node as? AVAudioMixerNode)
       let replacementSource = try #require(
-        engine.inputConnectionPoint(for: destination, inputBus: 1)?.node as? AVAudioSourceNode)
+        engine.inputConnectionPoint(for: microphoneMixer, inputBus: 1)?.node as? AVAudioSourceNode)
       #expect(replacementClock.outputVolume == 0)
       #expect(engine.inputConnectionPoint(for: replacementClock, inputBus: 0)?.node === input)
       #expect(hooks.engineWillRelease(engine) == 0)
       #expect(replacementSource.engine == nil)
       #expect(replacementClock.engine == nil)
-      #expect(engine.attachedNodes.count == 2)
+      #expect(engine.attachedNodes.count == 3)
     }
 
     @Test(arguments: [8000, 48000])

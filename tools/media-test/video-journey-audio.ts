@@ -7,6 +7,10 @@ import { measureMarkerAsync } from './measure-marker.ts';
 import type { NativeJourneyReply } from './native-journey.ts';
 
 export const journeyCaptureSeconds = 4;
+// Hosted sender stalls depleted the 100 ms FIFO across 211 ms of capture acknowledgements.
+export const journeyAudioQueueMs = 250;
+// The native hold command also allows 300 ms for pre-hold media to drain.
+export const heldAudioDrainMs = 300;
 
 type AudioStage = { pcm?: PCMCapture; sampleRate: number; retainedSamples: number; transportCount: number; lastTransportSample: number;
   observation: { installed: boolean; frameSeconds: number };
