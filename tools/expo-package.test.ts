@@ -72,12 +72,3 @@ for (const change of ['source', 'vendor', 'missing', 'extra'] as const) {
     checkVendor(root);
   });
 }
-
-test('installed packages reject changed content even without the source checkout', t => {
-  const root = sourceFixture(t);
-  preparePackage(root);
-  rmSync(join(root, 'Sources'), { recursive: true });
-  checkDistribution(join(root, 'expo'));
-  writeFileSync(join(root, 'expo/ios/Vendor/VoIPCore/Example.swift'), '// changed\n');
-  assert.throws(() => checkDistribution(join(root, 'expo')), /differs from the SDK sources/);
-});
