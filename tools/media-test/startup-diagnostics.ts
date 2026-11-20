@@ -55,7 +55,11 @@ export function diagnoseNativeStartup(value: unknown) {
     const [name, associated] = entry;
     if (!stages.some(stage => stage === name) || !isRecord(associated)) return unavailable;
     const label = '_0' in associated ? associated._0 : undefined;
-    const key = name === 'tapInstalled' || name === 'firstCallback' ? `${name}:${label}` : name;
+    let key = name;
+    if (name === 'tapInstalled' || name === 'firstCallback') {
+      if (label !== 'decoded' && label !== 'output') return unavailable;
+      key = `${name}:${label}`;
+    }
     if (events.has(key)) return unavailable;
     events.set(key, label);
     prior = row.atMs;
