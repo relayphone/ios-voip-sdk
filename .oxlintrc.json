@@ -57,6 +57,18 @@
   },
   "overrides": [
     {
+      "files": ["tools/build-inspector.ts", "tools/inspector-*.ts"],
+      "rules": {
+        "anti-slop/no-object-parameters": "error",
+        "anti-slop/no-runtime-typeof": "error",
+        "anti-slop/no-unknown-parameters": "error",
+        "anti-slop/no-unsafe-dictionary-type": "error",
+        "anti-slop/require-safety-comment-for-type-assertion": "error",
+        "landmines-structure/test-file-names": "error",
+        "landmines-types/no-explicit-return-types": "error"
+      }
+    },
+    {
       "files": [
         "tools/command.ts",
         "tools/json-fields.ts",

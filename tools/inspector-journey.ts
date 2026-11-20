@@ -1,4 +1,5 @@
 import { simulatorRuntime } from './simulator-runtime.ts';
+import { isList, isRecord, isString } from './json-fields.ts';
 // Runs the Mac Inspector GUI beside one injected target simulator.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -14,7 +15,7 @@ import { runnerHungBeforeConnecting } from './simulator-test-result.ts';
 import { runReadyUITest } from './inspector-ui-run.ts';
 import { captureInspectorFailure } from './inspector-failure.ts';
 import { setupInspectorSimulator } from './inspector-setup.ts';
-import { configureInspectorFixture, inspectorFixtureJournal, inspectorJourneyBudgetSeconds, inspectorUnansweredSeconds } from './inspector-fixture.ts';
+import { configureInspectorFixture, inspectorFixtureJournal, inspectorJourneyBudgetSeconds, inspectorUnansweredSeconds } from './inspector-journey.fixture.ts';
 
 const bundle = 'dev.callkitsim.smoke';
 class InfrastructureFailure extends Error {
@@ -26,10 +27,10 @@ class InfrastructureFailure extends Error {
     this.retryable = retryable;
   }
 }
-function infrastructure<T>(step: string, body: () => T): T {
+function infrastructure<T>(step: string, body: () => T) {
   try { return body(); } catch (error) { throw new InfrastructureFailure(step, error); }
 }
-async function connected(bridge: ChildProcess, log: string): Promise<void> {
+async function connected(bridge: ChildProcess, log: string) {
   const deadline = Date.now() + 240_000;
   while (Date.now() < deadline) {
     if (!bridge.pid || bridge.exitCode !== null || bridge.signalCode !== null) throw new InfrastructureFailure('bridge-connect', 'Bridge exited');
@@ -38,12 +39,12 @@ async function connected(bridge: ChildProcess, log: string): Promise<void> {
   }
   throw new InfrastructureFailure('bridge-connect', 'Timed out');
 }
-function summary(message: string): void {
+function summary(message: string) {
   console.log(message);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${message}\n`);
 }
 
-async function stopBridge(bridge: ChildProcess | undefined): Promise<void> {
+async function stopBridge(bridge: ChildProcess | undefined) {
   if (!bridge?.pid || bridge.exitCode !== null || bridge.signalCode !== null) return;
   const exited = new Promise<void>(resolve => bridge.once('exit', () => resolve()));
   bridge.kill('SIGINT');
@@ -51,7 +52,7 @@ async function stopBridge(bridge: ChildProcess | undefined): Promise<void> {
   try { await exited; } finally { clearTimeout(timer); }
 }
 
-function uiBuildArguments(work: string): string[] {
+function uiBuildArguments(work: string) {
   return ['-project', 'tools/inspector-ui/InspectorJourney.xcodeproj',
     '-scheme', 'InspectorJourney', '-destination', 'platform=macOS',
     '-derivedDataPath', join(work, 'ui-build'),
@@ -59,12 +60,12 @@ function uiBuildArguments(work: string): string[] {
 }
 
 /** Builds before any target simulator or time-limited incoming call is created. */
-export function buildInspectorUITests(work: string, execute: typeof run = run): string {
+export function buildInspectorUITests(work: string, execute: typeof run = run) {
   return execute('xcodebuild', ['build-for-testing', ...uiBuildArguments(work)], { timeout: 600 });
 }
 
 /** Runs the prebuilt Mac UI test once and pushes only after it activates the Inspector. */
-export async function runInspectorUITest(work: string, result: string, push: () => void, execute: typeof runReadyUITest = runReadyUITest, journalPath?: string): Promise<string> {
+export async function runInspectorUITest(work: string, result: string, push: () => void, execute: typeof runReadyUITest = runReadyUITest, journalPath?: string) {
   const output = await execute('xcodebuild', ['test-without-building', ...uiBuildArguments(work),
     '-parallel-testing-enabled', 'NO', '-resultBundlePath', result], {
     timeout: inspectorJourneyBudgetSeconds, readyPath: `${result}.ready`, ready: push,
@@ -81,7 +82,7 @@ export async function runInspectorUITest(work: string, result: string, push: () 
 }
 
 /** Deletes owned devices and restarts the service before creating a fresh target. */
-async function recover(names: readonly string[], markers: string): Promise<void> {
+async function recover(names: readonly string[], markers: string) {
   for (const name of names) {
     try { run('xcrun', ['simctl', 'shutdown', name], { timeout: 30 }); } catch { /* May be stopped. */ }
     try { run('xcrun', ['simctl', 'delete', name], { timeout: 120 }); }
@@ -94,12 +95,24 @@ async function recover(names: readonly string[], markers: string): Promise<void>
   const deadline = Date.now() + 120_000;
   while (true) {
     try {
-      const state = JSON.parse(run('xcrun', ['simctl', 'list', 'devices', '--json'], { timeout: 15 })) as {
-        devices: Record<string, { name: string; udid: string }[]>;
-      };
-      for (const device of Object.values(state.devices).flat().filter(d => names.includes(d.name))) {
-        run('xcrun', ['simctl', 'delete', device.udid], { timeout: 30 });
+      const state: unknown = JSON.parse(run('xcrun', ['simctl', 'list', 'devices', '--json'], { timeout: 15 }));
+      if (!isRecord(state) || !('devices' in state) || !isRecord(state.devices)) {
+        throw new Error('Invalid simulator device inventory');
       }
+      const lists: unknown[] = Object.values(state.devices);
+      const ownedDevices: string[] = [];
+      for (const list of lists) {
+        if (!isList(list)) throw new Error('Invalid simulator device list');
+        for (const device of list) {
+          if (!isRecord(device) || !('name' in device) || !isString(device.name)) {
+            throw new Error('Invalid simulator device');
+          }
+          if (!names.includes(device.name)) continue;
+          if (!('udid' in device) || !isString(device.udid)) throw new Error('Owned device has no identifier');
+          ownedDevices.push(device.udid);
+        }
+      }
+      for (const udid of ownedDevices) run('xcrun', ['simctl', 'delete', udid], { timeout: 30 });
       for (const name of names) rmSync(join(markers, name), { force: true });
       return;
     } catch (error) {
@@ -110,7 +123,7 @@ async function recover(names: readonly string[], markers: string): Promise<void>
 }
 
 /** Runs at most two attempts; only infrastructure errors allow a fresh target simulator. */
-export async function journey(work: string): Promise<void> {
+export async function journey(work: string) {
   const runtime = join(work, 'runtime');
   configureInspectorFixture(runtime);
   summary(`Inspector fixture-only unverified unanswered timeout: ${inspectorUnansweredSeconds}s; UI budget: ${inspectorJourneyBudgetSeconds}s`);

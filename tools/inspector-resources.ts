@@ -7,13 +7,13 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { isMain, main, run } from './command.ts';
 
 /** Retains the tail of a log with a hard byte limit. */
-export function boundedTail(value: string | Buffer, limit = 2 * 1024 * 1024): Buffer {
-  const bytes = typeof value === 'string' ? Buffer.from(value) : value;
+export function boundedTail(value: string | Buffer, limit = 2 * 1024 * 1024) {
+  const bytes = Buffer.isBuffer(value) ? value : Buffer.from(value);
   return bytes.subarray(Math.max(0, bytes.length - limit));
 }
 
 /** Summarizes the highest used-memory percentage and lowest free-page count observed. */
-export function memoryMargin(samples: string): string {
+export function memoryMargin(samples: string) {
   const free = [...samples.matchAll(/System-wide memory free percentage:\s*(\d+)%/g)].map(m => Number(m[1]));
   const pages = [...samples.matchAll(/Pages free:\s*(\d+)/g)].map(m => Number(m[1]));
   if (!free.length || !pages.length) return 'warning:resource-sampler did not capture memory pressure and free pages';
@@ -24,7 +24,7 @@ export function memoryMargin(samples: string): string {
 }
 
 /** Reports observed one-minute host load only while XCUITest was running. */
-export function uiPeakLoad(samples: string): string {
+export function uiPeakLoad(samples: string) {
   let active = false;
   const loads: number[] = [];
   for (const line of samples.split('\n')) {
@@ -37,7 +37,7 @@ export function uiPeakLoad(samples: string): string {
     : 'UI test peak load unavailable (no samples in UI window)';
 }
 
-function sample(path: string, crashes: CrashTracker): void {
+function sample(path: string, crashes: CrashTracker) {
   appendFileSync(path, `\n${new Date().toISOString()}\n`);
   for (const [command, args, keep] of [
     ['vm_stat', [], /page size|Pages (free|active|inactive|speculative|wired down)|compressor/],
@@ -64,7 +64,7 @@ export function startResourceSampler(
     const timer = setInterval(tick, milliseconds);
     return () => clearInterval(timer);
   },
-): () => void {
+) {
   let stopped = false;
   const tick = () => {
     if (stopped) return;
@@ -76,8 +76,8 @@ export function startResourceSampler(
 }
 
 /** Captures only a rolling tail, including stderr, even if the command fails or times out. */
-export async function captureTail(command: string, args: readonly string[], limit = 2 * 1024 * 1024): Promise<Buffer> {
-  return new Promise(resolve => {
+export async function captureTail(command: string, args: readonly string[], limit = 2 * 1024 * 1024) {
+  return new Promise<Buffer>(resolve => {
     let tail: Buffer = Buffer.alloc(0);
     const append = (chunk: Buffer) => { tail = boundedTail(Buffer.concat([tail, chunk]), limit); };
     const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -93,7 +93,7 @@ export async function captureTail(command: string, args: readonly string[], limi
 }
 
 /** Saves simulator state and the latest CoreSimulator messages without masking the original failure. */
-export async function simulatorDiagnostics(prefix: string): Promise<void> {
+export async function simulatorDiagnostics(prefix: string) {
   mkdirSync(dirname(prefix), { recursive: true });
   for (const [name, command, args] of [
     ['devices', 'xcrun', ['simctl', 'list', 'devices']],

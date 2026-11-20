@@ -7,7 +7,7 @@ import { isMain, main, option, repository, run } from './command.ts';
 import { buildSimulatorApp, simulatorArchitecture } from './simulator-app.ts';
 
 /** Builds `CKSimInspector.app` in the directory and returns its path. */
-export function buildInspector(output: string, platform = 'ios-simulator', execute: typeof run = run): string {
+export function buildInspector(output: string, platform = 'ios-simulator', execute: typeof run = run) {
   if (platform !== 'ios-simulator' && platform !== 'macos') throw new Error(`Unsupported Inspector platform: ${platform}`);
   if (existsSync(output)) throw new Error(`Output already exists: ${output}`);
   mkdirSync(output, { recursive: true });

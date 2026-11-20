@@ -2,20 +2,20 @@ import { basename, join } from 'node:path';
 import { closeSync, openSync, readSync, readdirSync } from 'node:fs';
 
 interface ProcessRow { pid: number; parent: number; cpu: number; command: string; row: string }
-function processes(output: string): ProcessRow[] {
+function processes(output: string) {
   return output.split('\n').flatMap(row => {
     const m = /^\s*(\d+)\s+(\d+)\s+\S+\s+([\d.]+)\s+\S+\s+(.+)$/.exec(row);
-    return m ? [{ pid: Number(m[1]), parent: Number(m[2]), cpu: Number(m[3]), command: m[4]!, row }] : [];
+    return m?.[4] ? [{ pid: Number(m[1]), parent: Number(m[2]), cpu: Number(m[3]), command: m[4], row }] : [];
   });
 }
 
 /** CPU leaders with parent chains, command multiplicity and live crash reporter count. */
-export function processSummary(output: string): string {
+export function processSummary(output: string) {
   const rows = processes(output);
   const byPID = new Map(rows.map(row => [row.pid, row]));
   const counts = new Map<string, number>();
   for (const row of rows) counts.set(row.command, (counts.get(row.command) ?? 0) + 1);
-  const ancestry = (row: ProcessRow): string => {
+  const ancestry = (row: ProcessRow) => {
     const visited = new Set<number>();
     const chain: string[] = [];
     let current: ProcessRow | undefined = row;
@@ -37,17 +37,18 @@ export function processSummary(output: string): string {
   ].join('\n');
 }
 
-function ipsFiles(root: string): string[] {
+function ipsFiles(root: string) {
   let entries;
   try { entries = readdirSync(root, { withFileTypes: true }); }
   catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return [];
     throw error;
   }
-  return entries.flatMap(entry => {
+  const files: string[] = entries.flatMap(entry => {
     const path = join(root, entry.name);
     return entry.isDirectory() ? ipsFiles(path) : entry.isFile() && entry.name.endsWith('.ips') ? [path] : [];
   });
+  return files;
 }
 
 /** Tracks new reports separately for the host and simulator directories from sampler startup. */
@@ -58,7 +59,7 @@ export class CrashTracker {
     this.roots = roots;
     for (const root of roots) for (const path of ipsFiles(root)) this.seen.add(path);
   }
-  sample(): string {
+  sample() {
     return this.roots.map(root => {
       const added = ipsFiles(root).filter(path => !this.seen.has(path));
       const headers = added.map(path => {

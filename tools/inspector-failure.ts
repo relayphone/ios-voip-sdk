@@ -1,10 +1,12 @@
 // Retains read-only runtime evidence after a journey failure, before simulator cleanup.
 import { constants, closeSync, fstatSync, openSync, readSync, writeFileSync } from 'node:fs';
+import { isNumber } from './json-fields.ts';
 import { join } from 'node:path';
 import { run } from './command.ts';
+import { isInspectorSession } from './inspector-journal.ts';
 
 /** Reads only regular files, with a fixed allocation even when a live journal is growing. */
-function boundedFile(path: string, limit: number, tail: boolean): Buffer {
+function boundedFile(path: string, limit: number, tail: boolean) {
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const stat = fstatSync(fd);
@@ -21,15 +23,12 @@ function boundedFile(path: string, limit: number, tail: boolean): Buffer {
 }
 
 /** Copies the current session and journal tail without a mailbox command or target mutation. */
-export function captureInspectorJournal(container: string, bundle: string, prefix: string): void {
+export function captureInspectorJournal(container: string, bundle: string, prefix: string) {
   const channel = join(container, 'Documents/.callkit-simulator');
   const bytes = boundedFile(join(channel, 'session.json'), 64 * 1024, false);
-  const session = JSON.parse(bytes.toString('utf8')) as {
-    schemaVersion?: unknown; bundleID?: unknown; runID?: unknown; pid?: unknown;
-  };
-  if (session.schemaVersion !== 1 || session.bundleID !== bundle
-    || typeof session.runID !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(session.runID)
-    || typeof session.pid !== 'number' || !Number.isSafeInteger(session.pid) || session.pid <= 0) {
+  const session: unknown = JSON.parse(bytes.toString('utf8'));
+  if (!isInspectorSession(session) || session.bundleID !== bundle
+    || !isNumber(session.pid) || !Number.isSafeInteger(session.pid) || session.pid <= 0) {
     throw new Error('Invalid current runtime identity for failure evidence');
   }
   writeFileSync(`${prefix}-current-session.json`, bytes);
@@ -37,7 +36,7 @@ export function captureInspectorJournal(container: string, bundle: string, prefi
 }
 
 /** Capture failures are diagnostic only and never replace or retry the original journey failure. */
-export function captureInspectorFailure(device: string, bundle: string, prefix: string, execute: typeof run = run): void {
+export function captureInspectorFailure(device: string, bundle: string, prefix: string, execute: typeof run = run) {
   try {
     const container = execute('xcrun', ['simctl', 'get_app_container', device, bundle, 'data'], { timeout: 10 });
     captureInspectorJournal(container, bundle, prefix);
