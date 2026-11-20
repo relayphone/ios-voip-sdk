@@ -49,32 +49,32 @@ const evaluateInfoPlist = (props: VoIPConversationsPluginProps) =>
 
 describe("withVoIPConversationsIos Info.plist configuration", () => {
   it("registers the unified call intent and preserves the app's other activities", async () => {
-    assert.deepStrictEqual((await evaluateInfoPlist({})).NSUserActivityTypes, ["INStartCallIntent"]);
+    assert.deepStrictEqual((await evaluateInfoPlist({}))["NSUserActivityTypes"], ["INStartCallIntent"]);
     const plist = await evaluateMod({}, "infoPlist", {
       NSUserActivityTypes: ["com.example.activity", "INStartAudioCallIntent", "INStartCallIntent", "INStartVideoCallIntent"],
     });
-    assert.deepStrictEqual(plist.NSUserActivityTypes, ["com.example.activity", "INStartCallIntent"]);
+    assert.deepStrictEqual(plist["NSUserActivityTypes"], ["com.example.activity", "INStartCallIntent"]);
   });
 
   it("defaults VoIPConversationsIncludesCallsInRecents to true when the prop is omitted", async () => {
     const plist = await evaluateInfoPlist({});
-    assert.strictEqual(plist.VoIPConversationsIncludesCallsInRecents, true);
+    assert.strictEqual(plist["VoIPConversationsIncludesCallsInRecents"], true);
   });
 
   it("writes VoIPConversationsIncludesCallsInRecents=false when the prop is false", async () => {
     const plist = await evaluateInfoPlist({ includesCallsInRecents: false });
-    assert.strictEqual(plist.VoIPConversationsIncludesCallsInRecents, false);
+    assert.strictEqual(plist["VoIPConversationsIncludesCallsInRecents"], false);
   });
 
   it("writes VoIPConversationsIncludesCallsInRecents=true when the prop is explicitly true", async () => {
     const plist = await evaluateInfoPlist({ includesCallsInRecents: true });
-    assert.strictEqual(plist.VoIPConversationsIncludesCallsInRecents, true);
+    assert.strictEqual(plist["VoIPConversationsIncludesCallsInRecents"], true);
   });
 
   it("keeps writing the timeout defaults alongside the new key (chain intact)", async () => {
     const plist = await evaluateInfoPlist({});
-    assert.strictEqual(plist.VoIPConversationsIncomingCallTimeout, 45);
-    assert.strictEqual(plist.VoIPConversationsFulfillAnswerCallTimeout, 30);
+    assert.strictEqual(plist["VoIPConversationsIncomingCallTimeout"], 45);
+    assert.strictEqual(plist["VoIPConversationsFulfillAnswerCallTimeout"], 30);
   });
 
   it("writes the media adapter and unhandled action for the native module", async () => {
@@ -138,7 +138,7 @@ describe("withVoIPConversationsIos call notifications", () => {
     assert.partialDeepStrictEqual(await evaluateMod({ callNotifications: true }, "entitlements"), {
       "com.apple.developer.usernotifications.communication": true,
     });
-    const types = (await evaluateInfoPlist({ callNotifications: true })).NSUserActivityTypes;
+    const types = (await evaluateInfoPlist({ callNotifications: true }))["NSUserActivityTypes"];
     assert.ok(Array.isArray(types));
     assert.ok(types.includes("INStartCallIntent"));
   });
@@ -152,17 +152,17 @@ describe("withVoIPConversationsIos call notifications", () => {
 describe("first-call media permission configuration", () => {
   it("adds only microphone usage for audio-only apps", async () => {
     const plist = await evaluateInfoPlist({});
-    assert.equal(plist.NSCameraUsageDescription, undefined);
-    assert.equal(typeof plist.NSMicrophoneUsageDescription, "string");
-    assert.equal((await evaluateInfoPlist({ supportsVideo: false, video: false })).NSCameraUsageDescription, undefined);
-    assert.equal((await evaluateInfoPlist({ cameraPermission: "Unused custom camera message" })).NSCameraUsageDescription, undefined);
+    assert.equal(plist["NSCameraUsageDescription"], undefined);
+    assert.equal(typeof plist["NSMicrophoneUsageDescription"], "string");
+    assert.equal((await evaluateInfoPlist({ supportsVideo: false, video: false }))["NSCameraUsageDescription"], undefined);
+    assert.equal((await evaluateInfoPlist({ cameraPermission: "Unused custom camera message" }))["NSCameraUsageDescription"], undefined);
   });
   it("adds camera usage when either video option is enabled and preserves custom messages", async () => {
     for (const props of [{ supportsVideo: true }, { video: true }, { supportsVideo: false, video: true }]) {
-      assert.equal(typeof (await evaluateInfoPlist(props)).NSCameraUsageDescription, "string");
+      assert.equal(typeof (await evaluateInfoPlist(props))["NSCameraUsageDescription"], "string");
     }
-    assert.equal((await evaluateInfoPlist({ supportsVideo: true, cameraPermission: "Video calls" })).NSCameraUsageDescription, "Video calls");
-    assert.equal((await evaluateInfoPlist({ video: true, cameraPermission: false })).NSCameraUsageDescription, undefined);
-    assert.equal((await evaluateMod({}, "infoPlist", { NSCameraUsageDescription: "Another app feature" })).NSCameraUsageDescription, "Another app feature");
+    assert.equal((await evaluateInfoPlist({ supportsVideo: true, cameraPermission: "Video calls" }))["NSCameraUsageDescription"], "Video calls");
+    assert.equal((await evaluateInfoPlist({ video: true, cameraPermission: false }))["NSCameraUsageDescription"], undefined);
+    assert.equal((await evaluateMod({}, "infoPlist", { NSCameraUsageDescription: "Another app feature" }))["NSCameraUsageDescription"], "Another app feature");
   });
 });

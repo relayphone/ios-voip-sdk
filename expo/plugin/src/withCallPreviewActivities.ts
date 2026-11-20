@@ -90,7 +90,7 @@ struct JoinCallPreview: JoinCallPreviewIntent {
   };
 }
 
-function xml(text: string): string {
+function xml(text: string) {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -101,12 +101,6 @@ type WidgetFile =
   | "CallPreviewWidget.swift"
   | "JoinCallPreview.swift"
   | "Info.plist";
-
-const WIDGET_FILE_NAMES: readonly WidgetFile[] = [
-  "CallPreviewWidget.swift",
-  "JoinCallPreview.swift",
-  "Info.plist",
-];
 
 /** The file that both the app and the widget extension compile. */
 const SHARED_FILE = "JoinCallPreview.swift";
@@ -123,20 +117,30 @@ export type CallPreviewActivitiesOption =
       widgetExtension?: boolean;
     };
 
-/** The PBXProject objects, by section and then by identifier. */
-type Objects = Record<string, Record<string, unknown>>;
+type PbxRecord = Record<string, unknown>;
 
-interface BuildPhase {
-  files: { value: string; comment: string }[];
+function isRecord(value: unknown): value is PbxRecord {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-interface Group {
-  children: { value: string; comment: string }[];
+function isText(value: unknown): value is string {
+  return typeof value === "string";
 }
 
-interface BuildConfiguration {
-  name: string;
-  buildSettings: Record<string, unknown>;
+function requireRecord(value: unknown, label: string) {
+  if (!isRecord(value)) throw new Error(`${ERROR_MSG_PREFIX}Invalid ${label}.`);
+  return value;
+}
+
+function requireText(value: unknown, label: string) {
+  if (!isText(value)) throw new Error(`${ERROR_MSG_PREFIX}Invalid ${label}.`);
+  return value;
+}
+
+function requireList(value: unknown, label: string) {
+  if (!Array.isArray(value)) throw new Error(`${ERROR_MSG_PREFIX}Invalid ${label}.`);
+  const entries: unknown[] = value;
+  return entries;
 }
 
 /**
@@ -163,92 +167,55 @@ export function addCallPreviewWidget(
       `${ERROR_MSG_PREFIX}The app must be the Xcode project's first target.`,
     );
   }
-  const objects = project.hash.project.objects as Objects;
+  const objects = requireRecord(project.hash.project.objects, "project objects");
   // A project with one target has neither section, which `addTarget` needs.
-  objects.PBXTargetDependency ??= {};
-  objects.PBXContainerItemProxy ??= {};
+  objects["PBXTargetDependency"] ??= {};
+  objects["PBXContainerItemProxy"] ??= {};
 
-  const appPhases = (app.target.buildPhases as { value: string }[]).length;
-  const target = project.addTarget(
+  const appTarget = requireRecord(app.target, "app target");
+  const appPhases = requireList(appTarget["buildPhases"], "app build phases");
+  const existingPhases = appPhases.length;
+  const target = requireRecord(project.addTarget(
     WIDGET_TARGET,
     "app_extension",
     WIDGET_TARGET,
     `${bundleIdentifier}.${WIDGET_TARGET}`,
-  ) as {
-    uuid: string;
-    pbxNativeTarget: {
-      buildConfigurationList: string;
-      productReference: string;
-    };
-  };
-  embedWidget(
-    objects,
-    app.target.buildPhases as { value: string }[],
-    appPhases,
-    target,
-  );
+  ), "widget target");
+  const targetID = requireText(target["uuid"], "widget target identifier");
+  const widget = requireRecord(target["pbxNativeTarget"], "widget native target");
+  embedWidget(objects, appPhases, existingPhases, requireText(widget["productReference"], "widget product reference"));
 
   // The extension's files, in a group of their own.
-  const group = project.addPbxGroup([], WIDGET_TARGET, WIDGET_TARGET) as {
-    uuid: string;
-    pbxGroup: Group;
-  };
-  const references: Record<string, string> = {};
-  for (const name of WIDGET_FILE_NAMES) {
-    references[name] = addFileReference(objects, project, group.pbxGroup, name);
-  }
-  const mainGroup = project.getFirstProject().firstProject.mainGroup as string;
-  (project.getPBXGroupByKey(mainGroup) as Group).children.push({
-    value: group.uuid,
+  const group = requireRecord(project.addPbxGroup([], WIDGET_TARGET, WIDGET_TARGET), "widget group");
+  const children = requireList(requireRecord(group["pbxGroup"], "widget group record")["children"], "widget group children");
+  const widgetSource = addFileReference(objects, project, children, "CallPreviewWidget.swift");
+  const sharedSource = addFileReference(objects, project, children, SHARED_FILE);
+  addFileReference(objects, project, children, "Info.plist");
+  const mainGroupID = requireText(project.getFirstProject().firstProject.mainGroup, "main group identifier");
+  const mainGroup = requireRecord(project.getPBXGroupByKey(mainGroupID), "main group");
+  requireList(mainGroup["children"], "main group children").push({
+    value: requireText(group["uuid"], "widget group identifier"),
     comment: WIDGET_TARGET,
   });
 
-  const sources = (
-    project.addBuildPhase(
-      [],
-      "PBXSourcesBuildPhase",
-      "Sources",
-      target.uuid,
-    ) as {
-      buildPhase: BuildPhase;
-    }
-  ).buildPhase;
-  for (const name of ["CallPreviewWidget.swift", SHARED_FILE]) {
-    addBuildFile(objects, project, sources, references[name]!, name, "Sources");
-  }
-  project.addBuildPhase([], "PBXResourcesBuildPhase", "Resources", target.uuid);
-  project.addBuildPhase(
-    [],
-    "PBXFrameworksBuildPhase",
-    "Frameworks",
-    target.uuid,
+  const sources = requireRecord(
+    project.addBuildPhase([], "PBXSourcesBuildPhase", "Sources", targetID),
+    "widget sources build phase result",
   );
+  const sourceFiles = requireList(requireRecord(sources["buildPhase"], "widget sources build phase")["files"], "widget source files");
+  addBuildFile(objects, project, sourceFiles, widgetSource, "CallPreviewWidget.swift");
+  addBuildFile(objects, project, sourceFiles, sharedSource, SHARED_FILE);
+  project.addBuildPhase([], "PBXResourcesBuildPhase", "Resources", targetID);
+  project.addBuildPhase([], "PBXFrameworksBuildPhase", "Frameworks", targetID);
 
   // The app performs the Join intent, so it compiles the intent too.
-  const appSources = project.pbxSourcesBuildPhaseObj(
-    app.uuid,
-  ) as BuildPhase | null;
-  if (!appSources) {
-    throw new Error(
-      `${ERROR_MSG_PREFIX}The app target has no Sources build phase.`,
-    );
-  }
-  addBuildFile(
-    objects,
-    project,
-    appSources,
-    references[SHARED_FILE]!,
-    SHARED_FILE,
-    "Sources",
-  );
+  const appSources = requireRecord(project.pbxSourcesBuildPhaseObj(app.uuid), "app Sources build phase");
+  addBuildFile(objects, project, requireList(appSources["files"], "app source files"), sharedSource, SHARED_FILE);
 
-  const appSettings = buildConfigurations(
-    project,
-    app.target.buildConfigurationList as string,
-  );
+  const appSettings = buildConfigurations(project, requireText(appTarget["buildConfigurationList"], "app configuration list identifier"));
   for (const configuration of buildConfigurations(
     project,
-    target.pbxNativeTarget.buildConfigurationList,
+    requireText(widget["buildConfigurationList"], "widget configuration list identifier"),
   )) {
     const inherited =
       appSettings.find(({ name }) => name === configuration.name)
@@ -260,26 +227,22 @@ export function addCallPreviewWidget(
       CURRENT_PROJECT_VERSION: IOSConfig.Version.getBuildNumber(config),
       SWIFT_VERSION: "6.0",
       IPHONEOS_DEPLOYMENT_TARGET: deploymentTarget(
-        inherited.IPHONEOS_DEPLOYMENT_TARGET,
+        inherited["IPHONEOS_DEPLOYMENT_TARGET"],
       ),
-      TARGETED_DEVICE_FAMILY: inherited.TARGETED_DEVICE_FAMILY ?? '"1,2"',
+      TARGETED_DEVICE_FAMILY: inherited["TARGETED_DEVICE_FAMILY"] ?? '"1,2"',
       CODE_SIGN_STYLE: "Automatic",
-      ...pick(inherited, ["DEVELOPMENT_TEAM"]),
     });
+    if ("DEVELOPMENT_TEAM" in inherited) configuration.buildSettings["DEVELOPMENT_TEAM"] = inherited["DEVELOPMENT_TEAM"];
   }
   return project;
 }
 
 /** Whether the project has the widget extension's target, from an earlier prebuild. */
-function hasWidgetTarget(project: XcodeProject): boolean {
-  const targets =
-    (project.hash.project.objects as Objects).PBXNativeTarget ?? {};
-  return Object.values(targets).some(
-    (target) =>
-      typeof target === "object" &&
-      target !== null &&
-      String((target as { name?: unknown }).name).replace(/"/g, "") ===
-        WIDGET_TARGET,
+function hasWidgetTarget(project: XcodeProject) {
+  const objects = requireRecord(project.hash.project.objects, "project objects");
+  const targets = objects["PBXNativeTarget"];
+  return isRecord(targets) && Object.values(targets).some(
+    target => isRecord(target) && String(target["name"]).replace(/"/g, "") === WIDGET_TARGET,
   );
 }
 
@@ -289,128 +252,96 @@ function hasWidgetTarget(project: XcodeProject): boolean {
  * "Copy Files" phase, which may be another extension's, and leaves undefined attributes on the
  * product's file reference.
  */
-function embedWidget(
-  objects: Objects,
-  appPhases: { value: string; comment?: string }[],
-  existingPhases: number,
-  target: { pbxNativeTarget: { productReference: string } },
-): void {
-  const product = target.pbxNativeTarget.productReference;
-  const reference = objects.PBXFileReference![product] as Record<
-    string,
-    unknown
-  >;
+function embedWidget(objects: PbxRecord, appPhases: readonly unknown[], existingPhases: number, product: string) {
+  const fileReferences = requireRecord(objects["PBXFileReference"], "file reference section");
+  const reference = requireRecord(fileReferences[product], "widget file reference");
   for (const key of Object.keys(reference)) {
     if (reference[key] === undefined) delete reference[key];
   }
-  const copies = objects.PBXCopyFilesBuildPhase as Record<
-    string,
-    BuildPhase & { name?: string }
-  >;
-  const buildFiles = objects.PBXBuildFile as Record<
-    string,
-    { fileRef?: string }
-  >;
-  const isProduct = ({ value }: { value: string }) =>
-    buildFiles[value]?.fileRef === product;
-  let buildFile: { value: string; comment: string } | undefined;
-  for (const key of Object.keys(copies)) {
-    const phase = copies[key];
-    if (typeof phase !== "object" || !phase.files) continue;
-    buildFile ??= phase.files.find(isProduct);
-    phase.files = phase.files.filter((file) => !isProduct(file));
+  const copies = requireRecord(objects["PBXCopyFilesBuildPhase"], "copy files section");
+  const buildFiles = requireRecord(objects["PBXBuildFile"], "build file section");
+  const isProduct = (candidate: unknown): candidate is PbxRecord => {
+    if (!isRecord(candidate) || !isText(candidate["value"])) return false;
+    const buildFile = buildFiles[candidate["value"]];
+    return isRecord(buildFile) && buildFile["fileRef"] === product;
+  };
+  let buildFile: PbxRecord | undefined;
+  for (const phase of Object.values(copies)) {
+    if (!isRecord(phase) || !Array.isArray(phase["files"])) continue;
+    const files: readonly unknown[] = phase["files"];
+    buildFile ??= files.find(isProduct);
+    phase["files"] = files.filter(file => !isProduct(file));
   }
   const embed = appPhases[existingPhases];
-  const phase = embed && copies[embed.value];
-  if (!embed || !phase || !buildFile) {
-    throw new Error(
-      `${ERROR_MSG_PREFIX}Unable to embed the widget extension in the app.`,
-    );
+  if (!isRecord(embed) || !isText(embed["value"]) || !buildFile) {
+    throw new Error(`${ERROR_MSG_PREFIX}Unable to embed the widget extension in the app.`);
   }
+  const phaseID = embed["value"];
+  const phase = requireRecord(copies[phaseID], "widget embed build phase");
   const name = "Embed Foundation Extensions";
-  buildFile.comment = `${WIDGET_TARGET}.appex in ${name}`;
-  objects.PBXBuildFile![`${buildFile.value}_comment`] = buildFile.comment;
-  phase.files.push(buildFile);
-  phase.name = `"${name}"`;
-  copies[`${embed.value}_comment`] = name as never;
-  embed.comment = name;
+  const comment = `${WIDGET_TARGET}.appex in ${name}`;
+  const buildFileID = requireText(buildFile["value"], "widget build file identifier");
+  buildFile["comment"] = comment;
+  buildFiles[`${buildFileID}_comment`] = comment;
+  requireList(phase["files"], "widget embed files").push(buildFile);
+  phase["name"] = `"${name}"`;
+  copies[`${phaseID}_comment`] = name;
+  embed["comment"] = name;
 }
 
 /** Adds a file in the extension's group, and returns its file reference. */
-function addFileReference(
-  objects: Objects,
-  project: XcodeProject,
-  group: Group,
-  name: string,
-): string {
-  const uuid = project.generateUuid() as string;
-  const fileType = name.endsWith(".swift")
-    ? "sourcecode.swift"
-    : "text.plist.xml";
-  objects.PBXFileReference![uuid] = {
+function addFileReference(objects: PbxRecord, project: XcodeProject, children: unknown[], name: WidgetFile) {
+  const uuid = requireText(project.generateUuid(), "file reference identifier");
+  const fileType = name.endsWith(".swift") ? "sourcecode.swift" : "text.plist.xml";
+  const references = requireRecord(objects["PBXFileReference"], "file reference section");
+  references[uuid] = {
     isa: "PBXFileReference",
     lastKnownFileType: fileType,
     path: name,
     sourceTree: '"<group>"',
   };
-  objects.PBXFileReference![`${uuid}_comment`] = name;
-  group.children.push({ value: uuid, comment: name });
+  references[`${uuid}_comment`] = name;
+  children.push({ value: uuid, comment: name });
   return uuid;
 }
 
-/** Adds a file to a target's build phase. */
-function addBuildFile(
-  objects: Objects,
-  project: XcodeProject,
-  phase: BuildPhase,
-  fileRef: string,
-  name: string,
-  phaseName: string,
-): void {
-  const uuid = project.generateUuid() as string;
-  const comment = `${name} in ${phaseName}`;
-  objects.PBXBuildFile![uuid] = {
+/** Adds a source file to a target's build phase. */
+function addBuildFile(objects: PbxRecord, project: XcodeProject, files: unknown[], fileRef: string, name: WidgetFile) {
+  const uuid = requireText(project.generateUuid(), "build file identifier");
+  const comment = `${name} in Sources`;
+  const buildFiles = requireRecord(objects["PBXBuildFile"], "build file section");
+  buildFiles[uuid] = {
     isa: "PBXBuildFile",
     fileRef,
     fileRef_comment: name,
   };
-  objects.PBXBuildFile![`${uuid}_comment`] = comment;
-  phase.files.push({ value: uuid, comment });
+  buildFiles[`${uuid}_comment`] = comment;
+  files.push({ value: uuid, comment });
 }
 
 /** The build configurations of a configuration list. */
-function buildConfigurations(
-  project: XcodeProject,
-  listID: string,
-): BuildConfiguration[] {
-  const lists = project.pbxXCConfigurationList() as Record<
-    string,
-    { buildConfigurations: { value: string }[] }
-  >;
-  const section = project.pbxXCBuildConfigurationSection() as Record<
-    string,
-    BuildConfiguration
-  >;
-  return (lists[listID]?.buildConfigurations ?? []).flatMap(({ value }) =>
-    section[value] ? [section[value]] : [],
-  );
+function buildConfigurations(project: XcodeProject, listID: string) {
+  const lists = requireRecord(project.pbxXCConfigurationList(), "configuration list section");
+  const section = requireRecord(project.pbxXCBuildConfigurationSection(), "build configuration section");
+  const list = lists[listID];
+  if (!isRecord(list) || list["buildConfigurations"] === undefined) return [];
+  return requireList(list["buildConfigurations"], "configuration list entries").flatMap(entry => {
+    if (!isRecord(entry) || !isText(entry["value"])) return [];
+    const configuration = section[entry["value"]];
+    if (!isRecord(configuration)) return [];
+    return [{
+      name: requireText(configuration["name"], "build configuration name"),
+      buildSettings: requireRecord(configuration["buildSettings"], "build settings"),
+    }];
+  });
 }
 
 /** The app's deployment target, or the SDK's minimum when the app's is lower. */
-function deploymentTarget(app: unknown): string {
-  const version = typeof app === "string" ? app.replace(/"/g, "") : "";
+function deploymentTarget(app: unknown) {
+  const version = isText(app) ? app.replace(/"/g, "") : "";
   return Number.parseFloat(version) > Number.parseFloat(MINIMUM_IOS)
     ? version
     : MINIMUM_IOS;
-}
-
-function pick(
-  settings: Record<string, unknown>,
-  keys: string[],
-): Record<string, unknown> {
-  return Object.fromEntries(
-    keys.flatMap((key) => (key in settings ? [[key, settings[key]]] : [])),
-  );
 }
 
 /**
@@ -444,13 +375,12 @@ export function withWidgetCredentials(
   bundleIdentifier: string,
 ): ExpoConfig {
   const extra = record(config.extra);
-  const eas = record(extra.eas);
-  const build = record(eas.build);
-  const experimental = record(build.experimental);
-  const ios = record(experimental.ios);
-  const extensions = (
-    Array.isArray(ios.appExtensions) ? ios.appExtensions : []
-  ).filter((entry: unknown) => record(entry).targetName !== WIDGET_TARGET);
+  const eas = record(extra["eas"]);
+  const build = record(eas["build"]);
+  const experimental = record(build["experimental"]);
+  const ios = record(experimental["ios"]);
+  const current: readonly unknown[] = Array.isArray(ios["appExtensions"]) ? ios["appExtensions"] : [];
+  const extensions = current.filter(entry => record(entry)["targetName"] !== WIDGET_TARGET);
   extensions.push({
     targetName: WIDGET_TARGET,
     bundleIdentifier: `${bundleIdentifier}.${WIDGET_TARGET}`,
@@ -472,10 +402,8 @@ export function withWidgetCredentials(
   return config;
 }
 
-function record(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+function record(value: unknown) {
+  return isRecord(value) ? value : {};
 }
 
 /**
@@ -488,7 +416,7 @@ export const withCallPreviewActivities: ConfigPlugin<{
 }> = (config, { callPreviewActivities }) => {
   if (!callPreviewActivities) return config;
   config = withInfoPlist(config, (config) => {
-    config.modResults.NSSupportsLiveActivities = true;
+    config.modResults["NSSupportsLiveActivities"] = true;
     return config;
   });
   const widgetExtension =

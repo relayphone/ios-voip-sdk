@@ -8,7 +8,12 @@
       "node"
     ],
     "rewriteRelativeImportExtensions": true,
-    "strict": true
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "noPropertyAccessFromIndexSignature": true,
+    // app.plugin.js loads the compiled config plugin through CommonJS.
+    "verbatimModuleSyntax": false
   },
   "include": [
     "./src"
