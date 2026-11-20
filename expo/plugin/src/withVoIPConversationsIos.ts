@@ -85,13 +85,13 @@ const withBackgroundModes: ConfigPlugin = (config) => {
  */
 const withSiriIntents: ConfigPlugin = (config) => {
   return withInfoPlist(config, (config) => {
-    const existingIntents = config.modResults.NSUserActivityTypes;
+    const existingIntents = config.modResults["NSUserActivityTypes"];
     const intents = Array.isArray(existingIntents) ? existingIntents : [];
 
     const retained = intents.filter(intent =>
       intent !== "INStartAudioCallIntent" && intent !== "INStartVideoCallIntent");
     const newIntents = new Set([...retained, ...SIRI_INTENTS]);
-    config.modResults.NSUserActivityTypes = [...newIntents];
+    config.modResults["NSUserActivityTypes"] = [...newIntents];
 
     return config;
   });
@@ -106,9 +106,9 @@ const withTimeouts: ConfigPlugin<{
   fulfillAnswerCallTimeout?: number;
 }> = (config, { incomingCallTimeout, fulfillAnswerCallTimeout }) => {
   return withInfoPlist(config, (config) => {
-    config.modResults.VoIPConversationsIncomingCallTimeout =
+    config.modResults["VoIPConversationsIncomingCallTimeout"] =
       incomingCallTimeout ?? DEFAULT_INCOMING_CALL_TIMEOUT;
-    config.modResults.VoIPConversationsFulfillAnswerCallTimeout =
+    config.modResults["VoIPConversationsFulfillAnswerCallTimeout"] =
       fulfillAnswerCallTimeout ?? DEFAULT_FULFILL_ANSWER_CALL_TIMEOUT;
     return config;
   });
@@ -117,14 +117,9 @@ const withTimeouts: ConfigPlugin<{
 const MEDIA_ADAPTERS: readonly string[] = ["webrtc", "none"];
 
 /** Selects optional sources and compile conditions in the package's podspec. */
-const withCallCore: ConfigPlugin<{
-  mediaAdapter?: string;
-  simulator?: boolean;
-  unhandledAction?: string;
-  callNotifications?: boolean;
-  callPreviewActivities?: boolean;
-  focusFilter?: boolean;
-}> = (
+const withCallCore: ConfigPlugin<Pick<VoIPConversationsPluginProps,
+  "mediaAdapter" | "simulator" | "unhandledAction" | "callNotifications" | "callPreviewActivities" | "focusFilter"
+>> = (
   config,
   {
     mediaAdapter,
@@ -152,16 +147,16 @@ const withCallCore: ConfigPlugin<{
       callNotifications ?? false,
     );
     config.modResults["@relayphone/ios-voip-sdk.callPreviewActivities"] = String(
-      callPreviewActivities ?? false,
+      Boolean(callPreviewActivities),
     );
     config.modResults["@relayphone/ios-voip-sdk.focusFilter"] = String(
-      focusFilter ?? false,
+      Boolean(focusFilter),
     );
     return config;
   });
   return withInfoPlist(config, (config) => {
-    config.modResults.VoIPConversationsMediaAdapter = media;
-    config.modResults.VoIPConversationsUnhandledAction =
+    config.modResults["VoIPConversationsMediaAdapter"] = media;
+    config.modResults["VoIPConversationsUnhandledAction"] =
       unhandledAction ?? "fail";
     return config;
   });
@@ -191,7 +186,7 @@ const withRecents: ConfigPlugin<{ includesCallsInRecents?: boolean }> = (
   { includesCallsInRecents },
 ) => {
   return withInfoPlist(config, (config) => {
-    config.modResults.VoIPConversationsIncludesCallsInRecents =
+    config.modResults["VoIPConversationsIncludesCallsInRecents"] =
       includesCallsInRecents ?? DEFAULT_INCLUDES_CALLS_IN_RECENTS;
     return config;
   });
@@ -279,8 +274,8 @@ const withSounds: ConfigPlugin<{ sounds?: string[] }> = (
  */
 const withDefaultRingtone: ConfigPlugin<{
   sounds?: string[];
-  defaultRingtone?: string;
-}> = (config, { sounds, defaultRingtone }) => {
+  defaultRingtoneIos?: string;
+}> = (config, { sounds, defaultRingtoneIos: defaultRingtone }) => {
   const soundFilenames = sounds?.map((s) => basename(s)) ?? [];
 
   // Validate defaultRingtone if specified and not 'default'
@@ -301,7 +296,7 @@ const withDefaultRingtone: ConfigPlugin<{
   }
 
   return withInfoPlist(config, (config) => {
-    config.modResults.VoIPConversationsDefaultRingtone = defaultRingtone || "default";
+    config.modResults["VoIPConversationsDefaultRingtone"] = defaultRingtone || "default";
     return config;
   });
 };
@@ -351,7 +346,7 @@ const withIconTemplate: ConfigPlugin<{
 
   // Record the filename so the native side can resolve it from the bundle.
   config = withInfoPlist(config, (config) => {
-    config.modResults.VoIPConversationsIconTemplate = iconFilename;
+    config.modResults["VoIPConversationsIconTemplate"] = iconFilename;
     return config;
   });
 
@@ -376,50 +371,19 @@ export const withVoIPConversationsIos: ConfigPlugin<VoIPConversationsPluginProps
   props,
 ) => {
   rejectRemovedOptions(props);
-  const {
-    cameraPermission,
-    microphonePermission,
-    supportsVideo,
-    video,
-    incomingCallTimeout,
-    fulfillAnswerCallTimeout,
-    includesCallsInRecents,
-    sounds,
-    defaultRingtoneIos,
-    iconTemplateIos,
-    mediaAdapter,
-    simulator,
-    unhandledAction,
-    callNotifications,
-    callPreviewActivities,
-    focusFilter,
-  } = props;
-  config = withCallCore(config, {
-    mediaAdapter,
-    simulator,
-    unhandledAction,
-    callNotifications,
-    callPreviewActivities: Boolean(callPreviewActivities),
-    focusFilter: Boolean(focusFilter),
-  });
-  config = withCallNotifications(config, { callNotifications });
-  config = withCallPreviewActivities(config, { callPreviewActivities });
-  config = withFocusFilter(config, { focusFilter });
-  config = withPermissions(config, { cameraPermission, microphonePermission, supportsVideo, video });
+  config = withCallCore(config, props);
+  config = withCallNotifications(config, props);
+  config = withCallPreviewActivities(config, props);
+  config = withFocusFilter(config, props);
+  config = withPermissions(config, props);
   config = withPushNotificationEntitlement(config);
   config = withBackgroundModes(config);
   config = withSiriIntents(config);
-  config = withTimeouts(config, {
-    incomingCallTimeout,
-    fulfillAnswerCallTimeout,
-  });
-  config = withRecents(config, { includesCallsInRecents });
-  config = withSounds(config, { sounds });
-  config = withDefaultRingtone(config, {
-    sounds,
-    defaultRingtone: defaultRingtoneIos,
-  });
-  config = withIconTemplate(config, { sounds, iconTemplateIos });
+  config = withTimeouts(config, props);
+  config = withRecents(config, props);
+  config = withSounds(config, props);
+  config = withDefaultRingtone(config, props);
+  config = withIconTemplate(config, props);
 
   return config;
 };

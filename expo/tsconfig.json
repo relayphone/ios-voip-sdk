@@ -4,6 +4,10 @@
     "outDir": "./build",
     "rewriteRelativeImportExtensions": true,
     "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "verbatimModuleSyntax": true,
     "rootDir": "./src"
   },
   "include": [

@@ -7,6 +7,7 @@ import type { ExpoConfig } from "expo/config";
 import { createRequire } from "node:module";
 import type { ModConfig, XcodeProject } from "expo/config-plugins";
 import { join } from "path";
+import { isList, isRecord, isString } from "../../../../tools/json-fields.ts";
 
 import {
   addCallPreviewWidget,
@@ -20,6 +21,7 @@ import { withVoIPConversationsIos } from "../../build/withVoIPConversationsIos.j
 
 // Load config-plugins values the way the shipped CommonJS plugin does, so these tests resolve
 // `expo/config-plugins` on Expo releases with and without a package exports map.
+// SAFETY: The loader resolves the same Expo module whose declarations describe IOSConfig.
 const { IOSConfig } = createRequire(import.meta.url)("expo/config-plugins") as typeof import("expo/config-plugins");
 
 const app: ExpoConfig = {
@@ -33,14 +35,12 @@ const app: ExpoConfig = {
 async function evaluateMod(
   props: VoIPConversationsPluginProps,
   modName: "infoPlist" | "podfileProperties",
-): Promise<Record<string, unknown>> {
+) {
   const config: ExpoConfig & { mods?: ModConfig } = withVoIPConversationsIos(
     { ...app },
     props,
   );
-  const mod = config.mods?.ios?.[modName] as unknown as
-    | ((config: unknown) => Promise<{ modResults: Record<string, unknown> }>)
-    | undefined;
+  const mod = config.mods?.ios?.[modName];
   if (!mod) throw new Error(`The plugin registered no ${modName} mod.`);
   const result = await mod({
     ...config,
@@ -58,33 +58,47 @@ async function evaluateMod(
 }
 
 /** The Expo template's Xcode project, whose app target is `HelloWorld`. */
-function templateProject(): XcodeProject {
+function templateProject() {
   return IOSConfig.XcodeUtils.getPbxproj(join(import.meta.dirname, "fixtures"));
 }
 
-type Section = Record<string, Record<string, unknown> | string>;
+function fields(value: unknown) {
+  assert.ok(isRecord(value));
+  return new Map<string, unknown>(Object.entries(value));
+}
 
-function section(project: XcodeProject, name: string): Section {
-  return (project.hash.project.objects as Record<string, Section>)[name] ?? {};
+function section(project: XcodeProject, name: string) {
+  const objects = fields(project.hash.project.objects);
+  const value = objects.get(name);
+  return value === undefined ? new Map<string, unknown>() : fields(value);
+}
+
+function links(value: unknown, key: "value" | "comment") {
+  assert.ok(isList(value));
+  return value.map(entry => {
+    const link = fields(entry).get(key);
+    assert.ok(isString(link));
+    return link;
+  });
+}
+
+function configurationIDs(project: XcodeProject, target: ReadonlyMap<string, unknown>) {
+  const id = target.get("buildConfigurationList");
+  assert.ok(isString(id));
+  const list = fields(section(project, "XCConfigurationList").get(id));
+  return links(list.get("buildConfigurations"), "value");
 }
 
 /** The names of the files in a target's build phase of the given type. */
-function phaseFiles(
-  project: XcodeProject,
-  targetName: string,
-  type: string,
-): string[] {
-  const targets = section(project, "PBXNativeTarget");
-  const target = Object.values(targets).find(
-    (entry) =>
-      typeof entry === "object" &&
-      String(entry.name).replace(/"/g, "") === targetName,
-  ) as { buildPhases: { value: string }[] };
+function phaseFiles(project: XcodeProject, targetName: string, type: string) {
+  const target = section(project, "PBXNativeTarget").values().find(
+    entry => isRecord(entry) && "name" in entry && String(entry.name).replace(/"/g, "") === targetName,
+  );
+  assert.ok(target);
   const phases = section(project, type);
-  return target.buildPhases.flatMap(({ value }) => {
-    const phase = phases[value];
-    if (typeof phase !== "object") return [];
-    return (phase.files as { comment: string }[]).map(({ comment }) => comment);
+  return links(fields(target).get("buildPhases"), "value").flatMap(id => {
+    const phase = phases.get(id);
+    return isRecord(phase) ? links(fields(phase).get("files"), "comment") : [];
   });
 }
 
@@ -162,17 +176,11 @@ describe("addCallPreviewWidget", () => {
         bundleIdentifier: "com.example.calls",
         config,
       });
-      const widget = project.pbxTargetByName(`"${WIDGET_TARGET}"`) as {
-        buildConfigurationList: string;
-      };
-      const list = section(project, "XCConfigurationList")[
-        widget.buildConfigurationList
-      ] as {
-        buildConfigurations: { value: string }[];
-      };
-      assert.equal((list.buildConfigurations).length, 2);
-      for (const { value } of list.buildConfigurations) {
-        assert.partialDeepStrictEqual(section(project, "XCBuildConfiguration")[value], {
+      const widget = fields(project.pbxTargetByName(`"${WIDGET_TARGET}"`));
+      const ids = configurationIDs(project, widget);
+      assert.equal(ids.length, 2);
+      for (const id of ids) {
+        assert.partialDeepStrictEqual(section(project, "XCBuildConfiguration").get(id), {
           buildSettings: {
             MARKETING_VERSION: version,
             CURRENT_PROJECT_VERSION: buildNumber,
@@ -187,32 +195,20 @@ describe("addCallPreviewWidget", () => {
       bundleIdentifier: "com.example.calls",
       config: app,
     });
-    const widget = project.pbxTargetByName(`"${WIDGET_TARGET}"`) as {
-      productType: string;
-      buildConfigurationList: string;
-    };
-    assert.strictEqual(widget.productType, '"com.apple.product-type.app-extension"');
+    const widget = fields(project.pbxTargetByName(`"${WIDGET_TARGET}"`));
+    assert.strictEqual(widget.get("productType"), '"com.apple.product-type.app-extension"');
     assert.deepStrictEqual(phaseFiles(project, WIDGET_TARGET, "PBXSourcesBuildPhase"), [
       "CallPreviewWidget.swift in Sources",
       "JoinCallPreview.swift in Sources",
     ]);
     assert.ok((phaseFiles(project, "HelloWorld", "PBXSourcesBuildPhase")).includes("JoinCallPreview.swift in Sources"));
     assert.deepStrictEqual(phaseFiles(project, "HelloWorld", "PBXCopyFilesBuildPhase"), ["CallPreviewWidget.appex in Embed Foundation Extensions"]);
-    const embed = Object.values(
-      section(project, "PBXCopyFilesBuildPhase"),
-    ).find((entry) => typeof entry === "object");
+    const embed = section(project, "PBXCopyFilesBuildPhase").values().find(isRecord);
     assert.partialDeepStrictEqual(embed, { dstSubfolderSpec: 13, dstPath: '""' });
 
-    const lists = section(project, "XCConfigurationList");
     const configurations = section(project, "XCBuildConfiguration");
-    const settings = (
-      lists[widget.buildConfigurationList] as {
-        buildConfigurations: { value: string }[];
-      }
-    ).buildConfigurations.map(
-      ({ value }) =>
-        (configurations[value] as { buildSettings: Record<string, unknown> })
-          .buildSettings,
+    const settings = configurationIDs(project, widget).map(
+      id => fields(configurations.get(id)).get("buildSettings"),
     );
     assert.equal((settings).length, 2);
     for (const setting of settings) {

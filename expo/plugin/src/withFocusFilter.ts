@@ -93,7 +93,7 @@ export const withFocusFilter: ConfigPlugin<{
     );
   }
   config = withInfoPlist(config, (config) => {
-    config.modResults.VoIPConversationsFocusAppGroup = appGroup;
+    config.modResults["VoIPConversationsFocusAppGroup"] = appGroup;
     return config;
   });
   config = withEntitlementsPlist(config, (config) => {
