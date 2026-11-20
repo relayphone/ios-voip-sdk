@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import type { CallError, Model, WireID } from './model.ts';
+import { isRecord } from '../json-fields.ts';
+import type { CallError, WireID } from './model.ts';
 import { decodeHTTPAuthority, type HTTPAuthorityRequest } from './http-authority.ts';
 import { features } from './model-v1.ts';
 import type { CapabilityCatalog, ExpectationV1, InputV1, JourneyV1, ModelV1, NotificationSurface, PresentationDescriptor, SystemButton } from './model-v1.ts';
@@ -14,15 +15,16 @@ const systemButtons: Partial<Record<NotificationSurface, readonly SystemButton[]
   incomingCallStyle: ['answer', 'decline'], ongoingCallStyle: ['hangUp'], serviceFallback: ['hangUp'],
 };
 
-function checkDescriptor(descriptor: PresentationDescriptor): void {
+function checkDescriptor(descriptor: PresentationDescriptor) {
   const ids = descriptor.extraActions.map(action => action.id);
   if (new Set(ids).size !== ids.length || ids.some(id => ['answer', 'decline', 'hangUp'].includes(id))) {
     throw new Error('Extra actions must be distinct and cannot replace system buttons');
   }
 }
 
-export function decodeModelV1(value: unknown): ModelV1 {
+export function decodeModelV1(value: unknown) {
   validateV1(value);
+  // SAFETY: The version-1 model schema checks the discriminant and every variant before cloning.
   const model = structuredClone(value) as ModelV1;
   switch (model.kind) {
     case 'presentationDescriptor': checkDescriptor(model.value); break;
@@ -71,13 +73,14 @@ export function decodeModelV1(value: unknown): ModelV1 {
 }
 
 /** Dispatches on the explicit document version. The version 0 and 1 readers keep their own rules. */
-export function decodeVersionedModel(value: unknown): Model | ModelV1 {
-  if (value && typeof value === 'object' && 'version' in value && value.version === 1) return decodeModelV1(value);
+export function decodeVersionedModel(value: unknown) {
+  if (isRecord(value) && 'version' in value && value.version === 1) return decodeModelV1(value);
   return decodeModel(value);
 }
 
-export function decodeCapabilityCatalog(value: unknown): CapabilityCatalog {
+export function decodeCapabilityCatalog(value: unknown) {
   validateV1(value, 'capabilities');
+  // SAFETY: The capabilities definition checks every feature and platform condition.
   const catalog = structuredClone(value) as CapabilityCatalog;
   const keys = catalog.features.map(row => row.feature).sort();
   assert.deepEqual(keys, [...features].sort(), 'Every feature needs exactly one platform condition entry');
@@ -98,8 +101,9 @@ export function decodeCapabilityCatalog(value: unknown): CapabilityCatalog {
   return catalog;
 }
 
-export function decodeJourneyV1(value: unknown): JourneyV1 {
+export function decodeJourneyV1(value: unknown) {
   validateV1(value, 'journey');
+  // SAFETY: The version-1 journey definition checks the configuration and each step.
   const journey = structuredClone(value) as JourneyV1;
   validateBudgets(journey.configuration.budgets);
   if (!journey.steps.some(step => step.kind === 'expect')) throw new Error('Journey has no assertions');
@@ -126,7 +130,7 @@ type ObservationV1 = Observation & Readonly<{
 }>;
 export type JourneyDriverV1 = JourneyDriver<InputV1, ObservationV1>;
 
-function recordKey(record: ModelV1): readonly (string | number)[] {
+function recordKey(record: ModelV1) {
   switch (record.kind) {
     case 'presentationDescriptor': return [record.kind, record.value.state];
     case 'notificationObservation': return [
@@ -142,7 +146,7 @@ function recordKey(record: ModelV1): readonly (string | number)[] {
   }
 }
 
-export function checkV1(expected: ExpectationV1, observed: ObservationV1): void {
+export function checkV1(expected: ExpectationV1, observed: ObservationV1) {
   switch (expected.kind) {
     case 'httpRequests': {
       assert.ok(observed.httpRequests, 'Missing HTTP Answer request evidence');
@@ -177,11 +181,11 @@ export function checkV1(expected: ExpectationV1, observed: ObservationV1): void 
   }
 }
 
-export function runJourneyV1(journey: JourneyV1, driver: JourneyDriverV1): Promise<void> {
+export function runJourneyV1(journey: JourneyV1, driver: JourneyDriverV1) {
   return runSteps(journey, driver, checkV1);
 }
 
-export function loadCatalogV1(root = new URL('../../spec/', import.meta.url)): readonly JourneyV1[] {
+export function loadCatalogV1(root = new URL('../../spec/', import.meta.url)) {
   decodeCapabilityCatalog(JSON.parse(readFileSync(new URL('capabilities.json', root), 'utf8')));
   const directory = new URL('v1/journeys/', root);
   const journeys = readdirSync(directory).filter(name => name.endsWith('.json')).sort()

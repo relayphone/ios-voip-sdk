@@ -37,7 +37,7 @@ export type PushInput = RegistrationScope & (
   | { readonly kind: 'pushUploadCompleted'; readonly generation: number; readonly tokenID: WireID; readonly result: UploadResult }
 );
 
-function parseTimestamp(value: string): number {
+function parseTimestamp(value: string) {
   const time = Date.parse(value);
   if (!Number.isFinite(time) || new Date(time).toISOString() !== value) {
     throw new Error('Invalid push timestamp');
@@ -46,7 +46,7 @@ function parseTimestamp(value: string): number {
 }
 
 /** Checks temporal constraints after structural decoding. A supplied receipt time also checks intake eligibility. */
-export function validatePushEnvelope(value: PushEnvelope, receivedAt?: string): void {
+export function validatePushEnvelope(value: PushEnvelope, receivedAt?: string) {
   const issued = parseTimestamp(value.issuedAt);
   const expiry = parseTimestamp(value.expiresAt);
   if (issued >= expiry) throw new Error('Invalid push expiry interval');
@@ -56,7 +56,7 @@ export function validatePushEnvelope(value: PushEnvelope, receivedAt?: string): 
   }
 }
 
-export function validatePushHealth(value: PushHealth): void {
+export function validatePushHealth(value: PushHealth) {
   if (value.delivery.kind === 'unknown') return;
   const evidence = value.delivery.evidence;
   parseTimestamp(evidence.at);

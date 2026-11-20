@@ -122,6 +122,39 @@
         // SwiftPM lockfile guards establish pin identity and version types before checking dependencies.
         "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }]
       }
+    },
+    {
+      "files": ["tools/conformance/**/*.ts"],
+      "rules": {
+        "eslint/no-unused-vars": "error",
+        "anti-slop/no-chained-type-assertions": "error",
+        "anti-slop/no-runtime-typeof": "error",
+        "anti-slop/no-unsafe-dictionary-type": "error",
+        "anti-slop/no-unknown-parameters": "error",
+        "anti-slop/require-safety-comment-for-type-assertion": "error",
+        "landmines-types/no-explicit-return-types": "error"
+      }
+    },
+    {
+      "files": ["tools/conformance/schema.ts", "tools/conformance/v1.ts", "tools/conformance/http-authority.ts"],
+      "rules": {
+        // Schema entry points receive untrusted values and reject invalid shapes at runtime.
+        "anti-slop/no-unknown-parameters": "off"
+      }
+    },
+    {
+      "files": ["tools/conformance/schema.ts"],
+      "rules": {
+        // Boolean and number guards check primitive JSON types before schema validation.
+        "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }]
+      }
+    },
+    {
+      "files": ["tools/conformance/bridge.test.ts"],
+      "rules": {
+        // The bridge fixture transport receives raw native messages to exercise wire validation.
+        "anti-slop/no-unknown-parameters": "off"
+      }
     }
   ]
 }

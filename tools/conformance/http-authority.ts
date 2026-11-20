@@ -23,8 +23,9 @@ export type HTTPAuthorityResponse =
     ))
   | Readonly<{ kind: 'response'; operation: Operation; status: number }>;
 
-export function decodeHTTPAuthority(value: unknown): HTTPAuthorityRequest | HTTPAuthorityResponse {
+export function decodeHTTPAuthority(value: unknown) {
   validateHTTPAuthority(value);
+  // SAFETY: The HTTP authority schema checks the request and response variants before cloning.
   const message = structuredClone(value) as HTTPAuthorityRequest | HTTPAuthorityResponse;
   if (!('body' in message)) return message;
   const { actionID } = message.body;
