@@ -12,8 +12,8 @@ function fixture(scenario: LateHandlerScenario = 'after-deadline') {
     starts: scenario === 'before-deadline' ? 1 : 0, packetsSent: 0, packetsReceived: 0,
     snapshots: scenario === 'preview-placement' ? ['previewing', 'previewing']
       : scenario === 'before-deadline' ? ['connecting', 'connected'] : ['connecting'],
-    ...(scenario === 'preview-placement' ? { joinError: 'deadline_exceeded' } : {}),
   };
+  if (scenario === 'preview-placement') result.joinError = 'deadline_exceeded';
   const base = { runID: config.runID, pid: 42 };
   const call = { ...base, callID: 'fixture-call', callUUID: 'call-uuid' };
   const rows: { event: string; uptimeNanoseconds: number; runID: string; pid: number; callID?: string; callUUID?: string;
@@ -51,7 +51,7 @@ for (const [latenessMS, passes] of [[3000, true], [3001, false], [33000, false]]
     if (passes) {
       assertLateHandlerResults(f.result, f.config, f.journal());
     } else {
-      assert.throws(() => assertLateHandlerResults(f.result, f.config, f.journal()), (error: unknown) => {
+      assert.throws(() => assertLateHandlerResults(f.result, f.config, f.journal()), error => {
         assert.ok(error instanceof Error);
         assert.ok(error.message.includes(`lateness margin (lateness ${latenessMS.toFixed(3)} ms, limit 3000 ms; `
           + `handler acknowledgement 125.000 ms after timeout, ${(27125 + latenessMS).toFixed(3)} ms after connecting)`));
@@ -61,12 +61,13 @@ for (const [latenessMS, passes] of [[3000, true], [3001, false], [33000, false]]
   });
 }
 for (const mutation of ['missing acknowledgement', 'wrong generation', 'wrong runtime', 'wrong failure',
-  'early failure', 'connected', 'positive packet', 'transport start', 'stale config', 'failed stage', 'early attachment',
+  'early failure', 'missing native identity', 'connected', 'positive packet', 'transport start', 'stale config', 'failed stage', 'early attachment',
   'native attachment before failure']) {
   test(`rejects misleading completion: ${mutation}`, () => {
     const f = fixture();
     switch (mutation) {
       case 'missing acknowledgement': f.rows = f.rows.filter(row => row.event !== 'app.handlerReady'); break;
+      case 'missing native identity': f.rows.find(row => row.event === 'app.handlerReady')!.pid = 0; break;
       case 'wrong generation': f.rows.find(row => row.event === 'app.handlerReady')!.generation = 2; break;
       case 'wrong runtime': f.rows.find(row => row.event === 'sdk.ended')!.runID = 'stale'; break;
       case 'wrong failure': f.rows.find(row => row.event === 'sdk.ended')!.reason = 'failed.notPlaced'; break;

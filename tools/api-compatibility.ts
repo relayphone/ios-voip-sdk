@@ -142,7 +142,7 @@ if (isMain(import.meta.url)) {
       const assessment = assess(result.status, output, changelog, version, section);
       const report = summary(tag, assessment, section);
       console.log(report);
-      if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, report);
+      if (process.env['GITHUB_STEP_SUMMARY']) appendFileSync(process.env['GITHUB_STEP_SUMMARY'], report);
       if (assessment.kind === 'undocumented' || assessment.kind === 'toolFailure') process.exitCode = 1;
     } finally {
       rmSync(scratch, { recursive: true, force: true });

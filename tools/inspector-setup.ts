@@ -23,7 +23,8 @@ function execute(args: readonly string[], timeout: number) {
   });
   const error = result.error;
   const errorCode = error && 'code' in error && isString(error.code) ? error.code : undefined;
-  return { status: result.status, signal: result.signal, stderr: result.stderr ?? '', errorCode };
+  const status: SetupResult = { status: result.status, signal: result.signal, stderr: result.stderr ?? '' };
+  return errorCode === undefined ? status : { ...status, errorCode };
 }
 
 export class SimulatorSetupFailure extends Error {

@@ -113,9 +113,9 @@ if (isMain(import.meta.url)) {
     const notesFile = option(process.argv, 'notes');
     if (command === 'record' && tag && info && release && notesFile) {
       const result = check(tag, gitSource(), option(process.argv, 'main-ref'), info);
-      const repository = `${process.env.GITHUB_SERVER_URL ?? 'https://github.com'}/` +
-        `${process.env.GITHUB_REPOSITORY ?? ''}`;
-      const workflowRun = `${repository}/actions/runs/${process.env.GITHUB_RUN_ID ?? ''}`;
+      const repository = `${process.env['GITHUB_SERVER_URL'] ?? 'https://github.com'}/` +
+        `${process.env['GITHUB_REPOSITORY'] ?? ''}`;
+      const workflowRun = `${repository}/actions/runs/${process.env['GITHUB_RUN_ID'] ?? ''}`;
       writeFileSync(
         join(resolve(release), 'qualification.json'),
         `${JSON.stringify({ release: result, manifest: info, workflowRun }, null, 2)}\n`,
