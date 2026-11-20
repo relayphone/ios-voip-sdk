@@ -2,6 +2,16 @@
   "extends": ["../.oxlintrc.json"],
   "overrides": [
     {
+      "files": ["withFocusFilter.test.ts"],
+      "rules": {
+        "anti-slop/no-chained-type-assertions": "error",
+        "anti-slop/no-unknown-parameters": "error",
+        "anti-slop/no-unsafe-dictionary-type": "error",
+        "anti-slop/require-safety-comment-for-type-assertion": "error",
+        "landmines-types/no-explicit-return-types": "error"
+      }
+    },
+    {
       "files": ["withCallPreviewActivities.test.ts"],
       "rules": {
         // The tests read back raw Xcode project objects to verify the generated target.

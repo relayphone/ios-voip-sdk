@@ -13,37 +13,37 @@ import { addFocusFilterSources } from "../../build/withFocusFilter.js";
 
 // Load config-plugins values the way the shipped CommonJS plugin does, so these tests resolve
 // `expo/config-plugins` on Expo releases with and without a package exports map.
+// SAFETY: The CommonJS loader resolves the Expo module that owns the IOSConfig declarations.
 const { IOSConfig } = createRequire(import.meta.url)("expo/config-plugins") as typeof import("expo/config-plugins");
 
 const app: ExpoConfig = { name: "test-app", slug: "test-app" };
 const focusFilter = { appGroup: "group.com.example.calls" };
 
-/** Applies the iOS plugin and runs one of its mods against the given results. */
+/** Applies the iOS plugin and evaluates the selected mod with its fixture input. */
 async function evaluateMod(
   props: VoIPConversationsPluginProps,
   modName: "infoPlist" | "podfileProperties" | "entitlements",
-  modResults: Record<string, unknown> = {},
-): Promise<Record<string, unknown>> {
+  applicationGroups: string[] = [],
+) {
   const config: ExpoConfig & { mods?: ModConfig } = withVoIPConversationsIos(
     { ...app },
     props,
   );
-  const mod = config.mods?.ios?.[modName] as unknown as
-    | ((config: unknown) => Promise<{ modResults: Record<string, unknown> }>)
-    | undefined;
-  if (!mod) throw new Error(`The plugin registered no ${modName} mod.`);
-  const result = await mod({
-    ...config,
-    modResults,
-    modRequest: {
-      projectRoot: "/tmp/test-app",
-      platformProjectRoot: "/tmp/test-app/ios",
-      modName,
-      platform: "ios",
-      introspect: true,
-    },
-    modRawConfig: { ...app },
-  });
+  const modRequest = {
+    projectRoot: "/tmp/test-app",
+    platformProjectRoot: "/tmp/test-app/ios",
+    modName,
+    platform: "ios" as const,
+    introspect: true,
+  };
+  const request = { ...config, modRequest, modRawConfig: { ...app } };
+  const mods = config.mods?.ios;
+  const result = modName === "entitlements"
+    ? await mods?.entitlements?.({
+      ...request, modResults: { "com.apple.security.application-groups": applicationGroups },
+    })
+    : await mods?.[modName]?.({ ...request, modResults: {} });
+  if (!result) throw new Error(`The plugin registered no ${modName} mod.`);
   return result.modResults;
 }
 
@@ -53,12 +53,10 @@ describe("withVoIPConversationsIos Focus filter", () => {
     assert.partialDeepStrictEqual(await evaluateMod({ focusFilter }, "infoPlist"), {
       VoIPConversationsFocusAppGroup: "group.com.example.calls",
     });
-    assert.partialDeepStrictEqual(await evaluateMod({ focusFilter }, "entitlements", {
-        "com.apple.security.application-groups": [
-          "group.com.example.other",
-          "group.com.example.calls",
-        ],
-      }), {
+    assert.partialDeepStrictEqual(await evaluateMod({ focusFilter }, "entitlements", [
+      "group.com.example.other",
+      "group.com.example.calls",
+    ]), {
       "com.apple.security.application-groups": [
         "group.com.example.other",
         "group.com.example.calls",
