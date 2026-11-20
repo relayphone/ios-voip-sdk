@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ExpoConfig } from "expo/config";
-import type { ModConfig } from "expo/config-plugins";
+import type { InfoPlist, ModConfig } from "expo/config-plugins";
+import { isString } from "../../../../tools/json-fields.ts";
 
 import type { VoIPConversationsPluginProps } from "../../build/withVoIPConversations.js";
 import {
@@ -16,31 +17,41 @@ import {
  */
 async function evaluateMod(
   props: VoIPConversationsPluginProps,
-  modName: "infoPlist" | "podfileProperties" | "entitlements",
-  modResults: Record<string, unknown> = {},
-): Promise<Record<string, unknown>> {
+  ...[modName, modResults]:
+    | [modName: "infoPlist", modResults?: InfoPlist]
+    | [modName: "podfileProperties", modResults?: Record<string, string>]
+    | [modName: "entitlements"]
+) {
   const config: ExpoConfig & { mods?: ModConfig } = withVoIPConversationsIos(
     { name: "test-app", slug: "test-app" },
     props,
   );
 
-  const mod = config.mods?.ios?.[modName] as unknown as
-    | ((config: unknown) => Promise<{ modResults: Record<string, unknown> }>)
-    | undefined;
-  if (!mod) throw new Error(`The plugin registered no ${modName} mod.`);
-
-  const result = await mod({
+  const request = {
     ...config,
-    modResults,
     modRequest: {
       projectRoot: "/tmp/test-app",
       platformProjectRoot: "/tmp/test-app/ios",
       modName,
-      platform: "ios",
+      platform: "ios" as const,
       introspect: true,
     },
     modRawConfig: { name: "test-app", slug: "test-app" },
-  });
+  };
+  const mods = config.mods?.ios;
+  let result;
+  switch (modName) {
+    case "infoPlist":
+      result = await mods?.infoPlist?.({ ...request, modResults: modResults ?? {} });
+      break;
+    case "podfileProperties":
+      result = await mods?.podfileProperties?.({ ...request, modResults: modResults ?? {} });
+      break;
+    case "entitlements":
+      result = await mods?.entitlements?.({ ...request, modResults: {} });
+      break;
+  }
+  if (!result) throw new Error(`The plugin registered no ${modName} mod.`);
   return result.modResults;
 }
 
@@ -121,10 +132,11 @@ describe("withVoIPConversationsIos call core selection", () => {
 
   it("rejects the removed calling framework option", () => {
     for (const callingFramework of ["callKit", "liveCommunicationKit"]) {
+      const props = { callNotifications: false, callingFramework };
       assert.throws(() =>
         withVoIPConversationsIos(
           { name: "test-app", slug: "test-app" },
-          { callingFramework } as VoIPConversationsPluginProps,
+          props,
         ), new RegExp("The \"callingFramework\" option was removed"));
     }
   });
@@ -153,13 +165,13 @@ describe("first-call media permission configuration", () => {
   it("adds only microphone usage for audio-only apps", async () => {
     const plist = await evaluateInfoPlist({});
     assert.equal(plist["NSCameraUsageDescription"], undefined);
-    assert.equal(typeof plist["NSMicrophoneUsageDescription"], "string");
+    assert.ok(isString(plist["NSMicrophoneUsageDescription"]));
     assert.equal((await evaluateInfoPlist({ supportsVideo: false, video: false }))["NSCameraUsageDescription"], undefined);
     assert.equal((await evaluateInfoPlist({ cameraPermission: "Unused custom camera message" }))["NSCameraUsageDescription"], undefined);
   });
   it("adds camera usage when either video option is enabled and preserves custom messages", async () => {
     for (const props of [{ supportsVideo: true }, { video: true }, { supportsVideo: false, video: true }]) {
-      assert.equal(typeof (await evaluateInfoPlist(props))["NSCameraUsageDescription"], "string");
+      assert.ok(isString((await evaluateInfoPlist(props))["NSCameraUsageDescription"]));
     }
     assert.equal((await evaluateInfoPlist({ supportsVideo: true, cameraPermission: "Video calls" }))["NSCameraUsageDescription"], "Video calls");
     assert.equal((await evaluateInfoPlist({ video: true, cameraPermission: false }))["NSCameraUsageDescription"], undefined);

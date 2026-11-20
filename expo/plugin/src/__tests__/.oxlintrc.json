@@ -12,6 +12,17 @@
         "anti-slop/require-safety-comment-for-type-assertion": "error",
         "landmines-types/no-explicit-return-types": "error"
       }
+    },
+    {
+      "files": ["withVoIPConversationsIos.test.ts"],
+      "rules": {
+        "anti-slop/no-chained-type-assertions": "error",
+        "anti-slop/no-runtime-typeof": "error",
+        "anti-slop/no-unknown-parameters": "error",
+        "anti-slop/no-unsafe-dictionary-type": "error",
+        "anti-slop/require-safety-comment-for-type-assertion": "error",
+        "landmines-types/no-explicit-return-types": "error"
+      }
     }
   ]
 }
