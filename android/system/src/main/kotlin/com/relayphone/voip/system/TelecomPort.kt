@@ -99,7 +99,6 @@ internal class TelecomPort<NativeID : Any>(
                     control.audio?.let { audio ->
                         val sessionAudio = TelecomAudioSession(control.id.toString(), audio)
                         session.audio = sessionAudio
-                        audioRoutes.add(sessionAudio)
                         session.audioObserver = session.scope.launch {
                             audioRoutes.observe(this, sessionAudio)
                             audio.isMuted.collect { muted -> systemMute(session, sessionAudio, muted) }
@@ -138,7 +137,7 @@ internal class TelecomPort<NativeID : Any>(
                 }
             }
             session.audioObserver?.cancel()
-            session.audio?.let(audioRoutes::remove)
+            session.audio?.let(audioRoutes::release)
             session.finished.complete(if (control != null && result is Outcome.Success) {
                 Outcome.Success(Unit)
             } else {
@@ -277,6 +276,7 @@ internal class TelecomPort<NativeID : Any>(
 
     private fun finishAnswerReceipt(session: Session<NativeID>, answer: Answer, result: Outcome<Unit, CallError>) {
         answer.acknowledged = result is Outcome.Success
+        if (answer.acknowledged) activateAudio(session)
         if (result is Outcome.Failure && session.answer === answer) session.answer = null
         receipts.remove(answer.key)
         answer.result.complete(result)
@@ -290,8 +290,11 @@ internal class TelecomPort<NativeID : Any>(
             return
         }
         val control = session.ready.await() ?: return
-        val result = nativeResult(SystemOperation.ACTION) { control.setHeld(false) }
-        if (result is Outcome.Failure) sessionLost(session.id, CallError.SystemFailed(result.error))
+        session.controlLock.withLock {
+            if (session.held || session.closed || session.disconnectOrigin != null) return
+            val result = requestHold(session, control, false)
+            if (result is Outcome.Failure) sessionLost(session.id, result.error)
+        }
     }
 
     override suspend fun apply(request: Effect.Apply): Outcome<Unit, CallError> = when (val action = request.action) {
@@ -303,15 +306,26 @@ internal class TelecomPort<NativeID : Any>(
 
     private suspend fun applyHold(action: Action.Hold, id: ActionID): Outcome<Unit, CallError> {
         val session = sessions.find(action.callID) ?: return Outcome.Failure(CallError.UnknownCall(action.callID))
-        if (session.systemHold == id) {
+        if (id in session.systemHolds) {
             recordHold(session, action.held)
             return Outcome.Success(Unit)
         }
         val control = session.ready.await() ?: return Outcome.Failure(CallError.BridgeUnavailable)
-        session.requestedHold = action.held
+        return session.controlLock.withLock {
+            when {
+                session.closed || session.disconnectOrigin != null -> Outcome.Failure(CallError.BridgeUnavailable)
+                action.held == session.held -> Outcome.Success(Unit)
+                else -> requestHold(session, control, action.held)
+            }
+        }
+    }
+
+    private suspend fun requestHold(session: Session<NativeID>, control: TelecomControl<NativeID>, held: Boolean):
+        Outcome<Unit, CallError> {
+        session.requestedHold = held
         return try {
-            nativeResult(SystemOperation.ACTION) { control.setHeld(action.held) }.asAction().also {
-                if (it is Outcome.Success) recordHold(session, action.held)
+            nativeResult(SystemOperation.ACTION) { control.setHeld(held) }.asAction().also {
+                if (it is Outcome.Success) recordHold(session, held)
             }
         } finally {
             session.requestedHold = null
@@ -321,22 +335,20 @@ internal class TelecomPort<NativeID : Any>(
     private suspend fun systemHold(session: Session<NativeID>, held: Boolean) {
         if (session.closed || held == session.held || held == session.requestedHold) return
         val key = key(session.id)
-        session.systemHold = key.actionID
+        session.systemHolds.add(key.actionID)
         try {
             request(Action.Hold(session.id, held), key, supported = true).requireAccepted()
         } finally {
-            session.systemHold = null
+            session.systemHolds.remove(key.actionID)
         }
     }
 
-    override suspend fun selectRoute(id: String): Outcome<Unit, CallError> {
-        val (session, endpoint) = audioRoutes.target(id) ?: return audioFailure()
-        if (routes.value.current?.id == id) return Outcome.Success(Unit)
-        return withContext(dispatcher) {
-            withTimeoutOrNull(TELECOM_CALLBACK_LIMIT) {
-                confirmAudio { session.control.selectEndpoint(endpoint.id) }
-            } ?: audioFailure()
-        }
+    override suspend fun selectRoute(id: String): Outcome<Unit, CallError> = withContext(dispatcher) {
+        val (session, endpoint) = audioRoutes.target(id) ?: return@withContext audioFailure()
+        if (routes.value.current?.id == id) return@withContext Outcome.Success(Unit)
+        withTimeoutOrNull(TELECOM_CALLBACK_LIMIT) {
+            confirmAudio { session.control.selectEndpoint(endpoint.id) }
+        } ?: audioFailure()
     }
 
     override suspend fun perform(action: Action): Outcome<ActionReceipt, CallError> {
@@ -365,12 +377,21 @@ internal class TelecomPort<NativeID : Any>(
         return withContext(dispatcher) { confirmAudio { audio.sendTones(request.action.digits) } }
     }
 
+    private fun activateAudio(session: Session<NativeID>) {
+        synchronized(session) {
+            if (!session.held && !session.closed && session.disconnectOrigin == null) {
+                session.audio?.let(audioRoutes::activate)
+            }
+        }
+    }
+
     private suspend fun recordHold(session: Session<NativeID>, held: Boolean) {
-        session.held = held
-        val audio = session.audio ?: return
-        if (held) audioRoutes.setHeld(audio, true)
+        val audio = synchronized(session) {
+            session.held = held
+            session.audio?.also { if (held) audioRoutes.release(it) }
+        } ?: return
         withContext(dispatcher) { confirmAudio { audio.control.holdChanged(held) } }
-        if (!held) audioRoutes.setHeld(audio, false)
+        if (!held) activateAudio(session)
     }
 
     private suspend fun applyMute(action: Action.Mute, id: ActionID): Outcome<Unit, CallError> {
@@ -379,10 +400,8 @@ internal class TelecomPort<NativeID : Any>(
         val audio = session.audio ?: return audioFailure()
         return withContext(dispatcher) {
             confirmAudio {
-                if (audio.systemMute != id) {
-                    if (!audioRoutes.isCurrent(audio) || session.disconnectOrigin != null) throw NativeTelecomFailure()
-                    audio.control.setMuted(action.muted)
-                }
+                if (!audioRoutes.isCurrent(audio) || session.disconnectOrigin != null) throw NativeTelecomFailure()
+                if (audio.systemMute != id) audio.control.setMuted(action.muted)
                 audio.muted = action.muted
             }
         }
@@ -481,7 +500,7 @@ private class Session<NativeID : Any>(val id: CallID, val scope: CoroutineScope)
     var audioObserver: kotlinx.coroutines.Job? = null
     @Volatile var held = false
     @Volatile var requestedHold: Boolean? = null
-    @Volatile var systemHold: ActionID? = null
+    val systemHolds: MutableSet<ActionID> = ConcurrentHashMap.newKeySet()
 
     fun beginDisconnect(origin: Origin): Boolean = synchronized(this) {
         if (closed || disconnectOrigin != null) return false

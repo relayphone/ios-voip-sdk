@@ -43,17 +43,14 @@ internal class TelecomAudioSession(val id: String, val control: TelecomAudioCont
     val muteRequests = Mutex()
     @Volatile var muted = false
     @Volatile var systemMute: ActionID? = null
-    var held = false
     var available = emptyMap<String, TelecomEndpoint>()
     var current: TelecomEndpoint? = null
 }
 
 internal class TelecomAudioRoutes {
-    private val sessions = linkedSetOf<TelecomAudioSession>()
+    private var owner: TelecomAudioSession? = null
     private val snapshots = MutableStateFlow(CallAudioRoutes(1, emptyList(), null))
     val routes = snapshots.asStateFlow()
-
-    fun add(session: TelecomAudioSession) = update { sessions.add(session) }
 
     fun observe(scope: CoroutineScope, session: TelecomAudioSession) {
         scope.launch {
@@ -68,26 +65,27 @@ internal class TelecomAudioRoutes {
         }
     }
 
-    fun remove(session: TelecomAudioSession) = update { sessions.remove(session) }
-    fun setHeld(session: TelecomAudioSession, held: Boolean) = update { session.held = held }
+    fun activate(session: TelecomAudioSession) = update { owner = session }
+
+    fun release(session: TelecomAudioSession) = update {
+        if (owner === session) owner = null
+    }
 
     @Synchronized
-    fun isCurrent(session: TelecomAudioSession) = currentSession() === session
+    fun isCurrent(session: TelecomAudioSession) = owner === session
 
     @Synchronized
     fun target(id: String): Pair<TelecomAudioSession, TelecomEndpoint>? {
-        val session = currentSession() ?: return null
+        val session = owner ?: return null
         val endpointID = id.removePrefix("${session.id}/")
         if (endpointID == id) return null
         return session.available[endpointID]?.let { session to it }
     }
 
-    private fun currentSession() = sessions.lastOrNull { !it.held }
-
     @Synchronized
     private fun update(change: () -> Unit) {
         change()
-        val session = currentSession()
+        val session = owner
         val choices = session?.available?.values?.map { it.route(session.id) }.orEmpty()
         val current = session?.current?.route(session.id)
         val previous = snapshots.value

@@ -7,7 +7,6 @@ import kotlin.time.Instant
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -129,6 +128,94 @@ internal class TelecomAudioTest {
         runtime.close()
     }
 
+    @Test
+    fun `a waiting call cannot take the active routes or mute before the call handoff`() = runTest {
+        val (port, backend, runtime) = connected()
+        val activeID = invitation.callID
+        val waiting = invitation.copy(callID = CallID("waiting"), eventID = EventID("waiting-invite"))
+        val initial = port.routes.value
+        val receiverID = initial.routes.first().id
+        val speakerID = initial.routes.last().id
+        val receipts = receipts(runtime)
+
+        assertEquals(Outcome.Success(IncomingResult.Admitted(waiting.callID)), runtime.reportIncoming(waiting))
+        val active = backend.audio(activeID)
+        val waitingAudio = backend.audio(waiting.callID)
+        waitingAudio.currentEndpoint.value = speaker
+        waitingAudio.isMuted.value = true
+        runCurrent()
+        assertEquals(Lifecycle.Ringing, runtime.snapshot().state.calls.getValue(waiting.callID).lifecycle)
+        assertEquals(initial, port.routes.value)
+        assertTrue(receipts.isEmpty())
+
+        assertEquals(Outcome.Success(Unit), port.selectRoute(speakerID))
+        assertEquals("speaker", active.selection)
+        assertNull(waitingAudio.selection)
+        active.muteAllowed.complete(Unit)
+        assertTrue(port.perform(Action.Mute(activeID, true)) is Outcome.Success)
+        assertTrue(port.perform(Action.Mute(waiting.callID, true)) is Outcome.Failure)
+        active.isMuted.value = false
+        runCurrent()
+        assertEquals(listOf(ActionOrigin.APP, ActionOrigin.SYSTEM), receipts.map { it.origin })
+        assertEquals(listOf(Action.Mute(activeID, true), Action.Mute(activeID, false)), receipts.map { it.action })
+        assertEquals(listOf(true), active.muteRequests)
+        assertTrue(waitingAudio.muteRequests.isEmpty())
+
+        val hold = CompletableDeferred<Unit>()
+        active.controlAllowed = hold
+        runtime.submit(Input.Request(Action.Hold(activeID, true), ActionID("hold-active"), supported = true))
+        runCurrent()
+        assertEquals(initial, port.routes.value)
+        assertEquals(Outcome.Failure(CallError.Refused(RefusalReason.NotAllowed)), port.answerWithReceipt(waiting.callID))
+        hold.complete(Unit)
+        runCurrent()
+        assertTrue(port.routes.value.routes.isEmpty())
+
+        assertTrue(port.answerWithReceipt(waiting.callID) is Outcome.Success)
+        assertEquals(CallAudioRouteType.SPEAKER, port.routes.value.current?.type)
+        assertNotEquals(speakerID, port.routes.value.current?.id)
+        assertTrue(port.selectRoute(speakerID) is Outcome.Failure)
+        waitingAudio.muteAllowed.complete(Unit)
+        assertTrue(port.perform(Action.Mute(waiting.callID, true)) is Outcome.Success)
+
+        runtime.submit(Input.Request(Action.End(waiting.callID), ActionID("end-waiting")))
+        runCurrent()
+        assertTrue(port.routes.value.routes.isEmpty())
+        runtime.submit(Input.Request(Action.Hold(activeID, false), ActionID("resume-active"), supported = true))
+        runCurrent()
+        assertEquals(receiverID, port.routes.value.current?.id)
+        assertEquals(listOf(true, false), active.holdChanges)
+        assertEquals(Outcome.Success(Unit), port.selectRoute(speakerID))
+        runtime.close()
+    }
+
+    @Test
+    fun `outgoing media prepared during placement gets routes only after native activation`() = runTest {
+        val prepared = CompletableDeferred<Unit>()
+        val (port, backend, runtime) = started(OutgoingMedia.DURING_PLACEMENT, prepared)
+        val id = CallID("outgoing-audio")
+        runtime.submit(Input.Start(id, invitation.line, listOf(invitation.party), false, ActionID("start")))
+        runCurrent()
+        assertEquals(Lifecycle.Placing, runtime.snapshot().state.calls.getValue(id).lifecycle)
+        assertTrue(port.routes.value.routes.isEmpty())
+
+        prepared.complete(Unit)
+        runCurrent()
+        assertEquals(Lifecycle.Dialing, runtime.snapshot().state.calls.getValue(id).lifecycle)
+        assertTrue(port.routes.value.routes.isEmpty())
+
+        val activated = CompletableDeferred<Unit>()
+        backend.audio(id).controlAllowed = activated
+        runtime.receive(RemoteEvent.Connected(EventID("outgoing-connected"), EndTarget.Canonical(id)))
+        runCurrent()
+        assertTrue(runtime.snapshot().state.calls.getValue(id).lifecycle is Lifecycle.Connected)
+        assertTrue(port.routes.value.routes.isEmpty())
+        activated.complete(Unit)
+        runCurrent()
+        assertEquals(CallAudioRouteType.RECEIVER, port.routes.value.current?.type)
+        runtime.close()
+    }
+
     private fun TestScope.receipts(runtime: CallRuntime): List<ActionReceipt> {
         val receipts = mutableListOf<ActionReceipt>()
         backgroundScope.launch {
@@ -141,24 +228,7 @@ internal class TelecomAudioTest {
     }
 
     private suspend fun TestScope.connected(): Triple<TelecomPort<String>, FakeTelecom, CallRuntime> {
-        lateinit var runtime: CallRuntime
-        val backend = FakeTelecom()
-        val port = TelecomPort(backend, { runtime.submit(it) }, StandardTestDispatcher(testScheduler))
-        val media = object : MediaPort {
-            override suspend fun prepare(request: Effect.PrepareMedia) = Outcome.Success(Unit)
-            override suspend fun close(request: Effect.CloseMedia) = Unit
-            override suspend fun sendTones(request: Effect.SendTones) = port.sendTones(request)
-        }
-        val authority = object : AuthorityPort {
-            override suspend fun claim(request: Effect.RequestClaim) = AnswerDecision.Allow(AttemptID("permit"))
-            override suspend fun reconcile(request: Effect.Reconcile) = Reconciliation.Unknown
-            override suspend fun release(request: Effect.ReleasePermit) = Unit
-        }
-        runtime = (CallRuntime.start(
-            Configuration(Budgets(), OutgoingMedia.WHEN_PROVIDED, ConnectionAuthority.APPLICATION, 1, false),
-            backgroundScope, port, authority, media, PresentationPort {},
-            MonotonicClock { Instant.fromEpochMilliseconds(testScheduler.currentTime) },
-        ) as Outcome.Success).value
+        val (port, backend, runtime) = started()
         assertEquals(Outcome.Success(IncomingResult.Admitted(invitation.callID)), runtime.reportIncoming(invitation))
         assertTrue(port.answerWithReceipt(invitation.callID) is Outcome.Success)
         runtime.receive(RemoteEvent.Connected(EventID("connected"), EndTarget.Canonical(invitation.callID)))
@@ -167,17 +237,47 @@ internal class TelecomAudioTest {
         return Triple(port, backend, runtime)
     }
 
+    private fun TestScope.started(
+        outgoing: OutgoingMedia = OutgoingMedia.WHEN_PROVIDED,
+        prepared: CompletableDeferred<Unit> = CompletableDeferred(Unit),
+    ): Triple<TelecomPort<String>, FakeTelecom, CallRuntime> {
+        lateinit var runtime: CallRuntime
+        val backend = FakeTelecom()
+        val port = TelecomPort(backend, { runtime.submit(it) }, StandardTestDispatcher(testScheduler))
+        val media = object : MediaPort {
+            override suspend fun prepare(request: Effect.PrepareMedia) = Outcome.Success(prepared.await())
+            override suspend fun close(request: Effect.CloseMedia) = Unit
+            override suspend fun sendTones(request: Effect.SendTones) = port.sendTones(request)
+        }
+        val authority = object : AuthorityPort {
+            override suspend fun placeCall(call: Call, request: Effect.RequestPlacement) = PlacementResult.Placed()
+            override suspend fun claim(request: Effect.RequestClaim) = AnswerDecision.Allow(AttemptID("permit"))
+            override suspend fun reconcile(request: Effect.Reconcile) = Reconciliation.Unknown
+            override suspend fun release(request: Effect.ReleasePermit) = Unit
+        }
+        runtime = (CallRuntime.start(
+            Configuration(Budgets(), outgoing, ConnectionAuthority.APPLICATION, 1, false),
+            backgroundScope, port, authority, media, PresentationPort {},
+            MonotonicClock { Instant.fromEpochMilliseconds(testScheduler.currentTime) },
+        ) as Outcome.Success).value
+        return Triple(port, backend, runtime)
+    }
+
     private class FakeTelecom : TelecomBackend<String> {
-        val audio = FakeAudio()
+        private val calls = mutableMapOf<CallID, FakeAudio>()
+        val audio get() = audio(invitation.callID)
+        fun audio(id: CallID) = calls.getOrPut(id) { FakeAudio() }
+
         override suspend fun addCall(call: Call, callbacks: TelecomCallbacks, admitted: (TelecomControl<String>) -> Unit) {
+            val ended = CompletableDeferred<Unit>()
             admitted(object : TelecomControl<String> {
                 override val id = "native-${call.id.value}"
-                override val audio = this@FakeTelecom.audio
+                override val audio = audio(call.id)
                 override suspend fun answer() = Unit
-                override suspend fun setHeld(held: Boolean) = Unit
-                override suspend fun disconnect(cause: TelecomEnd) = Unit
+                override suspend fun setHeld(held: Boolean) { audio.controlAllowed?.await() }
+                override suspend fun disconnect(cause: TelecomEnd) { ended.complete(Unit) }
             })
-            awaitCancellation()
+            ended.await()
         }
     }
 
@@ -188,6 +288,7 @@ internal class TelecomAudioTest {
         val muteAllowed = CompletableDeferred<Unit>()
         val muteRequests = mutableListOf<Boolean>()
         val holdChanges = mutableListOf<Boolean>()
+        var controlAllowed: CompletableDeferred<Unit>? = null
         val toneAllowed = CompletableDeferred<Unit>()
         var toneError: Int? = null
         var selection: String? = null
