@@ -9,7 +9,7 @@ import { run } from './command.ts';
 import { packageExpo, verifyExpoArchive } from './package-expo.ts';
 import { sha256 } from './runtime-package.ts';
 
-function fixture(t: { after: (cleanup: () => void) => void }): string {
+function fixture(t: { after: (cleanup: () => void) => void }) {
   const root = mkdtempSync(join(tmpdir(), 'voip-release-package-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, 'expo'), { recursive: true });

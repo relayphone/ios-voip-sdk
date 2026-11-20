@@ -19,7 +19,7 @@ export const loadScript = [
   "console.log(`expo ${require('expo/package.json').version}: config plugin loaded`);",
 ].join('\n');
 
-export function loadPlugin(archive: string, expo: string): string {
+export function loadPlugin(archive: string, expo: string) {
   const project = mkdtempSync(join(tmpdir(), `voip-plugin-expo-${expo}-`));
   try {
     writeFileSync(join(project, 'package.json'), `${JSON.stringify({ name: 'plugin-load', private: true })}\n`);
