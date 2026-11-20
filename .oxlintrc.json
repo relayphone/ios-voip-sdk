@@ -57,6 +57,18 @@
   },
   "overrides": [
     {
+      "files": ["tools/media-test/startup-diagnostics.ts"],
+      "rules": {
+        "anti-slop/no-conditional-empty-object-spread": "error",
+        "anti-slop/no-runtime-typeof": "error",
+        // The startup decoder accepts untrusted native evidence before checking its fields.
+        "anti-slop/no-unknown-parameters": "off",
+        "anti-slop/no-unsafe-dictionary-type": "error",
+        "anti-slop/require-safety-comment-for-type-assertion": "error",
+        "landmines-types/no-explicit-return-types": "error"
+      }
+    },
+    {
       "files": ["tools/build-inspector.ts", "tools/inspector-*.ts"],
       "rules": {
         "anti-slop/no-object-parameters": "error",
