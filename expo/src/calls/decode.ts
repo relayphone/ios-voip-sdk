@@ -136,4 +136,4 @@ export const milliseconds: Decoder<Milliseconds> = (input, path) => {
   return positive(input, path) as Milliseconds;
 };
 export const phone = text(3, 16, /^\+[1-9][0-9]{1,14}(?![\s\S])/u);
-export const digit = literal('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '#');
+export const digit = literal('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '#', 'A', 'B', 'C', 'D', 'a', 'b', 'c', 'd');

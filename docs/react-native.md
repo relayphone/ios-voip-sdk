@@ -299,9 +299,10 @@ manual mode and starts/stops its audio with system activation. LiveKit's React N
 WebRTC's audio session too, so use `"webrtc"` with LiveKit. Do not also activate the audio session
 from JavaScript. With `"none"`, the app supplies its own media and audio integration.
 
-`useAudioRoutes()` returns `{ routes, current }` from the SDK's `AudioSessionAdapter`;
-`selectAudioRoute(route.id)` requests one of those routes. Use the returned IDs rather than
-deriving them from route names.
+`getAudioRoutes()` reads `{ revision, routes, current }`. Use `useAudioRoutes()` to observe
+the available endpoints and the actual current output. `selectAudioRoute(route.id)` requests
+an endpoint using its opaque ID. On Android, Core-Telecom reports earpiece, speaker,
+wired headset and Bluetooth endpoints, with IDs stable within a call.
 
 For media that must prepare before JavaScript starts, register a Swift `CallMedia` through
 `NativeCallMedia.register(_:observers:)` in an Expo app delegate subscriber's

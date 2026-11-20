@@ -45,11 +45,11 @@ public data class ActionReceipt(
     public val origin: ActionOrigin,
 )
 
-/** Nonempty immutable DTMF sequence of the twelve keypad digits. */
+/** Nonempty immutable DTMF sequence of keypad digits or A–D tones. */
 @JvmInline
 public value class DTMFSequence(public val value: String) {
     init {
-        require(value.isNotEmpty() && value.all { it in "0123456789*#" }) { "Invalid DTMF sequence" }
+        require(value.isNotEmpty() && value.all { it in "0123456789*#ABCDabcd" }) { "Invalid DTMF sequence" }
     }
 }
 

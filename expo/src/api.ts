@@ -120,6 +120,8 @@ export function useConversation(id: ConversationId): Conversation | undefined {
     runtime.conversations.read().find((conversation) => conversation.id === id)
   );
 }
+/** Read native audio endpoints and the actual current output. @category Audio */
+export const getAudioRoutes = bridge.getAudioRoutes.bind(bridge);
 /** Native audio endpoints and the actual current output. @category Hooks */
 export function useAudioRoutes(): AudioRoutes {
   return useSyncExternalStore(runtime.routes.subscribe, runtime.routes.read);
