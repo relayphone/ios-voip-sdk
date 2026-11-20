@@ -114,6 +114,25 @@
       }
     },
     {
+      "files": ["tools/expo-{journey,late-handler}-results{,.test}.ts"],
+      "rules": {
+        "anti-slop/no-conditional-empty-object-spread": "error",
+        "anti-slop/no-known-value-widening": "error",
+        "anti-slop/no-runtime-typeof": "error",
+        "anti-slop/no-unknown-parameters": "error",
+        "anti-slop/no-unsafe-dictionary-type": "error",
+        "anti-slop/require-safety-comment-for-type-assertion": "error",
+        "landmines-types/no-explicit-return-types": "error"
+      }
+    },
+    {
+      "files": ["tools/expo-journey-results.ts"],
+      "rules": {
+        // Journey results cross a JSON boundary before the evidence fields are checked.
+        "anti-slop/no-unknown-parameters": "off"
+      }
+    },
+    {
       "files": ["tools/package-exact.test.ts"],
       "rules": {
         // The manifest test validates JSON fields at runtime.
@@ -143,6 +162,18 @@
         "anti-slop/no-runtime-typeof": "error",
         "anti-slop/no-unsafe-dictionary-type": "error",
         "anti-slop/no-unknown-parameters": "error",
+        "anti-slop/require-safety-comment-for-type-assertion": "error",
+        "landmines-types/no-explicit-return-types": "error"
+      }
+    },
+    {
+      "files": ["tools/expo-journey{,-setup}.ts"],
+      "rules": {
+        "eslint/no-unsafe-finally": "error",
+        "anti-slop/no-known-value-widening": "error",
+        "anti-slop/no-runtime-typeof": "error",
+        "anti-slop/no-unknown-parameters": "error",
+        "anti-slop/no-unknown-returns": "error",
         "anti-slop/require-safety-comment-for-type-assertion": "error",
         "landmines-types/no-explicit-return-types": "error"
       }

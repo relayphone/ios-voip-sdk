@@ -41,7 +41,7 @@ async function connected(bridge: ChildProcess, log: string) {
 }
 function summary(message: string) {
   console.log(message);
-  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${message}\n`);
+  if (process.env['GITHUB_STEP_SUMMARY']) appendFileSync(process.env['GITHUB_STEP_SUMMARY'], `${message}\n`);
 }
 
 async function stopBridge(bridge: ChildProcess | undefined) {
@@ -155,7 +155,7 @@ export async function journey(work: string) {
     const prefix = join(results, `attempt-${attempt + 1}`);
     let check = 'setup';
     try {
-      const targetName = `inspector-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}-${attempt}-target`;
+      const targetName = `inspector-${process.env['GITHUB_RUN_ID']}-${process.env['GITHUB_RUN_ATTEMPT']}-${attempt}-target`;
       names.push(targetName);
       writeFileSync(join(markers, targetName), '');
       const target = infrastructure('create', () => run('xcrun', ['simctl', 'create', targetName,
