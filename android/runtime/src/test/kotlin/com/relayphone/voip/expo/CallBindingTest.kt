@@ -9,6 +9,7 @@ import kotlin.time.Instant
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.Test
 internal class CallBindingTest {
     private val fixtures = File(System.getProperty("spec.bridge"))
     private val commands = fixture("commands.json")
+    private val placementReceiver = PlacementReceiver {}
     private val invitations = commands.filter { it["operation"] == JsonPrimitive("reportIncoming") && it.text("kind") == "command" }
     private val end = commands.last { it["operation"] == JsonPrimitive("perform") && it.text("kind") == "command" }
     private val answer = message("command", "operation" to encode("perform"), "input" to buildJsonObject {
@@ -29,6 +31,9 @@ internal class CallBindingTest {
         put("action", message("answer"))
     }).toString()
     private val id = invitations.first().obj("input").read<CallID>("callID")
+    private val start = commands.first()
+    private val outgoing = fixture("android-outgoing.json")
+    private val placementFixtures = fixture("placement.json")
 
     @Test
     fun `push shares deduplication with foreground intake and keeps its original expiry`() = runTest {
@@ -146,6 +151,125 @@ internal class CallBindingTest {
         assertEquals(attached["calls"], snapshot["calls"])
     }
 
+    @Test
+    fun `start confirms admission after atomic placement and reports connect hold resume and remote end`() = runTest {
+        val telecom = FakeSystem()
+        val binding = binding(telecom)
+        val frames = mutableListOf<JsonObject>()
+        val controls = mutableListOf<JsonObject>()
+        val receiver = PlacementReceiver { controls.add(BridgeWire.decode(it)) }
+        binding.state.attach { frames.add(BridgeWire.decode(it, "frame")) }
+        assertEquals(placementFixtures[1].obj("result"), binding.reply(placementFixtures[0].toString(), receiver))
+
+        val starting = async { binding.reply(start.toString(), receiver) }
+        runCurrent()
+        val requested = controls.single()
+        val placement = placementFixtures[2]
+        assertEquals(placement.obj("request"), requested.obj("request"))
+        assertEquals(placement["generation"], requested["generation"])
+        assertEquals(10_000L, requested.read<Long>("remainingMs"))
+        assertEquals(outgoing[1].obj("result"), binding.reply(outgoing[0].toString(), receiver))
+        assertEquals("placing", binding.lifecycle("outbound-a"))
+        assertEquals("unprovided", binding.call("outbound-a").obj("media").text("preparation"))
+        val settling = settlement(requested, "remote-a")
+        assertEquals(message("accepted"), binding.reply(settling, receiver).obj("value"))
+        assertEquals(message("stale"), binding.reply(settling, receiver).obj("value"))
+        runCurrent()
+        assertEquals("dialing", binding.lifecycle("outbound-a"))
+        assertEquals("prepared", binding.call("outbound-a").obj("media").text("preparation"))
+        assertFalse(starting.isCompleted)
+        val connected = commands.first { it["operation"] == JsonPrimitive("receive") }
+        binding.commandReply(connected.toString())
+        assertEquals("dialing", binding.lifecycle("outbound-a"))
+        telecom.startAdmission.complete(Unit)
+        assertPerformed(commands[1], starting.await(), frames)
+        runCurrent()
+        assertEquals("connected", binding.lifecycle("outbound-a"))
+        assertEquals("remote-a", binding.call("outbound-a").text("remoteID"))
+
+        for (index in listOf(2, 4)) {
+            assertPerformed(outgoing[index + 1], binding.reply(outgoing[index].toString(), receiver), frames)
+            assertEquals(outgoing[index].obj("input").obj("action").read<Boolean>("held"), binding.call("outbound-a").read<Boolean>("held"))
+        }
+        assertEquals(listOf(true, false), telecom.holds)
+        val remoteEnd = """{"kind":"command","operation":"receive","input":{"kind":"ended","eventID":"remote-end","target":{"kind":"remote","id":"remote-a"},"reason":{"kind":"remoteEnded"}}}"""
+        assertEquals(message("applied"), binding.reply(remoteEnd).obj("value"))
+        assertEquals("ended", binding.lifecycle("outbound-a"))
+        assertEquals("remoteEnded", binding.call("outbound-a").obj("lifecycle").obj("reason").text("kind"))
+        assertEquals(3, frames.count { it.text("kind") == "actionPerformed" })
+    }
+
+    @Test
+    fun `native admission refusal rejects start and discards early connection`() = runTest {
+        val telecom = FakeSystem(startFailure = SystemFailure(Platform.ANDROID, SystemOperation.START, 42))
+        val binding = binding(telecom)
+        val controls = mutableListOf<JsonObject>()
+        val receiver = PlacementReceiver { controls.add(BridgeWire.decode(it)) }
+        binding.reply(placementFixtures[0].toString(), receiver)
+        val starting = async { binding.reply(start.toString(), receiver) }
+        runCurrent()
+        val connected = commands.first { it["operation"] == JsonPrimitive("receive") }
+        assertEquals(message("buffered"), binding.reply(connected.toString()).obj("value"))
+        assertEquals(message("accepted"), binding.reply(settlement(controls.single(), "remote-a"), receiver).obj("value"))
+        telecom.startAdmission.complete(Unit)
+        assertEquals(outgoing.last().obj("result"), starting.await())
+        runCurrent()
+        assertEquals("ended", binding.lifecycle("outbound-a"))
+    }
+
+    @Test
+    fun `replacement, expiry and a missing handler reject only the matching start`() = runTest {
+        val telecom = FakeSystem()
+        val binding = binding(telecom)
+        val controls = mutableListOf<JsonObject>()
+        val receiver = PlacementReceiver { controls.add(BridgeWire.decode(it)) }
+        binding.reply(placementFixtures[0].toString(), receiver)
+        val first = async { binding.reply(start.toString(), receiver) }
+        runCurrent()
+        val replaced = controls.single()
+        binding.reply(placementFixtures[3].toString(), receiver)
+        assertEquals("replaced", controls.last().text("reason"))
+        assertEquals("cancelled", first.await().obj("error").text("cause"))
+        assertEquals(message("stale"), binding.reply(settlement(replaced, "remote-a"), receiver).obj("value"))
+
+        val next = async { binding.reply(start.toString().replace("outbound-a", "next"), receiver) }
+        runCurrent()
+        val expired = controls.last()
+        advanceTimeBy(10_000)
+        runCurrent()
+        assertEquals("deadlineExceeded", controls.last().text("reason"))
+        assertEquals("placement", next.await().obj("error").text("stage"))
+        assertEquals(message("stale"), binding.reply(settlement(expired, "remote-a"), receiver).obj("value"))
+
+        binding.detachPlacement(receiver)
+        val noHandler = binding.reply(start.toString().replace("outbound-a", "without-handler"), receiver)
+        assertEquals("deadlineExceeded", noHandler.obj("error").text("kind"))
+        assertEquals(0, telecom.starts)
+    }
+
+    private fun CallBinding.call(id: String): JsonObject =
+        state.snapshot().getValue("calls").jsonArray.map { it.jsonObject }.single { it.text("id") == id }
+
+    private fun CallBinding.lifecycle(id: String) = call(id).obj("lifecycle").text("kind")
+
+    private fun settlement(request: JsonObject, remoteID: String): String {
+        val template = placementFixtures.first { it["operation"] == JsonPrimitive("placement.settle") }
+        val input = template.obj("input")
+        return JsonObject(template + ("input" to JsonObject(input + mapOf(
+            "generation" to request.getValue("generation"), "actionID" to request.getValue("actionID"),
+            "result" to buildJsonObject { put("ok", true); put("value", message("placed", "remoteID" to encode(remoteID))) },
+        )))).toString()
+    }
+
+    private fun assertPerformed(fixture: JsonObject, actual: JsonObject, frames: List<JsonObject>) {
+        val expected = fixture.obj("result").obj("value").obj("receipt")
+        val confirmation = actual.obj("value")
+        val receipt = confirmation.obj("receipt")
+        assertEquals(expected - "actionID", receipt - "actionID")
+        val frame = frames.single { it["receipt"] == receipt }
+        assertTrue(confirmation.obj("cursor").read<Long>("sequence") >= frame.obj("cursor").read<Long>("sequence"))
+    }
+
     private fun TestScope.binding(telecom: FakeSystem) = CallBinding(
         backgroundScope, invitations.first().obj("input").read("line"),
         MonotonicClock { Instant.fromEpochMilliseconds(testScheduler.currentTime) },
@@ -155,8 +279,8 @@ internal class CallBindingTest {
         CallSystem(telecom, telecom::answer)
     }
 
-    private suspend fun CallBinding.reply(request: String): JsonObject =
-        BridgeWire.decode(command(request, negotiated = true) { _, _ -> error("Unexpected permission request") }, "reply")
+    private suspend fun CallBinding.reply(request: String, receiver: PlacementReceiver = placementReceiver): JsonObject =
+        BridgeWire.decode(command(request, true, receiver) { _, _ -> error("Unexpected permission request") }, "reply")
             .obj("result")
 
     private suspend fun CallBinding.commandReply(request: String): JsonObject {
@@ -169,13 +293,18 @@ internal class CallBindingTest {
     private fun fixture(name: String) = Wire.json.parseToJsonElement(fixtures.resolve(name).readText()).jsonArray
         .map { it.jsonObject }
 
-    private class FakeSystem(private val admissionFailure: SystemFailure? = null) : SystemPort {
+    private class FakeSystem(
+        private val admissionFailure: SystemFailure? = null, private val startFailure: SystemFailure? = null,
+    ) : SystemPort {
         override val platform = Platform.ANDROID
         override val answerDeadline = 5.seconds
         val removal = CompletableDeferred<Unit>()
+        val startAdmission = CompletableDeferred<Unit>()
+        val holds = mutableListOf<Boolean>()
         private val session = CompletableDeferred<Unit>()
         lateinit var submit: (Input) -> Boolean
         var reports = 0
+        var starts = 0
         private val answer = CompletableDeferred<Outcome<Unit, CallError>>()
         private val action = ActionID("answer-a")
 
@@ -199,13 +328,13 @@ internal class CallBindingTest {
         }
 
         override suspend fun remove(call: Call, request: Effect.RequestRemoval): Outcome<Unit, SystemFailure> {
-            removal.await()
+            if (call.direction == Direction.INCOMING) removal.await()
             session.complete(Unit)
             return Outcome.Success(Unit)
         }
 
         override fun settle(result: Effect.SettleAction) {
-            check(submit(Input.AnswerConfirmed(result.callID, result.actionID)))
+            if (result.actionID == action) check(submit(Input.AnswerConfirmed(result.callID, result.actionID)))
         }
 
         override fun completeAnswer(confirmation: Input.AnswerConfirmed, result: Outcome<Unit, CallError>) {
@@ -217,8 +346,21 @@ internal class CallBindingTest {
         }
 
         override fun completeEnd(result: Effect.CompleteEnd) = Unit
-        override suspend fun startOutgoing(call: Call, request: Effect.NativeStart, admitted: () -> Unit) = error("Unexpected Start")
-        override suspend fun apply(request: Effect.Apply): Outcome<Unit, CallError> = error("Unexpected control")
+        override suspend fun startOutgoing(
+            call: Call, request: Effect.NativeStart, admitted: () -> Unit,
+        ): Outcome<Unit, SystemFailure> {
+            starts++
+            startAdmission.await()
+            if (startFailure != null) return Outcome.Failure(startFailure)
+            admitted()
+            session.await()
+            return Outcome.Success(Unit)
+        }
+
+        override suspend fun apply(request: Effect.Apply): Outcome<Unit, CallError> {
+            holds.add((request.action as Action.Hold).held)
+            return Outcome.Success(Unit)
+        }
         override suspend fun setActive(request: Effect.SetActive) = Unit
     }
 }

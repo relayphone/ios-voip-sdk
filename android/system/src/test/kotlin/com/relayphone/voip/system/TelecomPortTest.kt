@@ -7,36 +7,54 @@ import com.relayphone.voip.ActionOrigin
 import com.relayphone.voip.ActionReceipt
 import com.relayphone.voip.AnswerBudget
 import com.relayphone.voip.Attempt
+import com.relayphone.voip.Budgets
 import com.relayphone.voip.Audio
 import com.relayphone.voip.Call
 import com.relayphone.voip.CallError
 import com.relayphone.voip.CallID
 import com.relayphone.voip.CallingLine
+import com.relayphone.voip.Configuration
+import com.relayphone.voip.ConnectionAuthority
 import com.relayphone.voip.Direction
 import com.relayphone.voip.Effect
 import com.relayphone.voip.EndReason
+import com.relayphone.voip.EndTarget
+import com.relayphone.voip.EventID
 import com.relayphone.voip.Handle
 import com.relayphone.voip.Input
 import com.relayphone.voip.Lifecycle
 import com.relayphone.voip.LineID
 import com.relayphone.voip.Media
 import com.relayphone.voip.Outcome
+import com.relayphone.voip.OutgoingMedia
 import com.relayphone.voip.Owner
 import com.relayphone.voip.Party
 import com.relayphone.voip.PartyID
+import com.relayphone.voip.PlacementResult
 import com.relayphone.voip.Platform
 import com.relayphone.voip.Preparation
 import com.relayphone.voip.RefusalReason
+import com.relayphone.voip.RemoteEvent
 import com.relayphone.voip.SystemFailure
 import com.relayphone.voip.SystemOperation
 import com.relayphone.voip.TimedStage
 import com.relayphone.voip.Transport
+import com.relayphone.voip.runtime.AnswerDecision
+import com.relayphone.voip.runtime.AuthorityPort
+import com.relayphone.voip.runtime.CallRuntime
+import com.relayphone.voip.runtime.MediaPort
+import com.relayphone.voip.runtime.MonotonicClock
+import com.relayphone.voip.runtime.Reconciliation
+import com.relayphone.voip.runtime.RuntimeFrame
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -79,6 +97,76 @@ class TelecomPortTest {
         }
         assertEquals(Outcome.Failure(SystemFailure(Platform.ANDROID, SystemOperation.ADMISSION, 7)), report)
         assertEquals(Outcome.Failure(SystemFailure(Platform.ANDROID, SystemOperation.START, 7)), start)
+    }
+
+    @Test
+    fun `system hold releases participation and a held call cannot resume while another is active`() = runTest {
+        val first = outgoing.id
+        val second = CallID("second")
+        val firstBackend = FakeBackend()
+        val secondBackend = FakeBackend(nativeID = 102L)
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val backend = object : TelecomBackend<Long> {
+            override suspend fun addCall(call: Call, callbacks: TelecomCallbacks, admitted: (TelecomControl<Long>) -> Unit) {
+                val session = if (call.id == first) firstBackend else secondBackend
+                session.addCall(call, callbacks, admitted)
+            }
+        }
+        lateinit var runtime: CallRuntime
+        val port = TelecomPort(backend, { runtime.submit(it) }, dispatcher, testScheduler.timeSource)
+        val authority = object : AuthorityPort {
+            override suspend fun placeCall(call: Call, request: Effect.RequestPlacement) = PlacementResult.Placed()
+            override suspend fun claim(request: Effect.RequestClaim): AnswerDecision = error("Unexpected claim")
+            override suspend fun reconcile(request: Effect.Reconcile): Reconciliation = error("Unexpected reconciliation")
+            override suspend fun release(request: Effect.ReleasePermit) = Unit
+        }
+        val media = object : MediaPort {
+            override suspend fun prepare(request: Effect.PrepareMedia) = Outcome.Success(Unit)
+            override suspend fun close(request: Effect.CloseMedia) = Unit
+            override suspend fun sendTones(request: Effect.SendTones): Outcome<Unit, CallError> = error("Unexpected tones")
+        }
+        runtime = (CallRuntime.start(
+            Configuration(Budgets(), OutgoingMedia.DURING_PLACEMENT, ConnectionAuthority.APPLICATION, 1, false),
+            backgroundScope, port, authority, media, {}, MonotonicClock { Instant.fromEpochMilliseconds(testScheduler.currentTime) },
+        ) as Outcome.Success).value
+        firstBackend.open.complete(Unit)
+        secondBackend.open.complete(Unit)
+
+        suspend fun connect(id: CallID, session: FakeBackend) {
+            assertTrue(runtime.startOutgoing(id, outgoing.line, outgoing.parties) is Outcome.Success)
+            runtime.receive(RemoteEvent.Connected(EventID("connect-${id.value}"), EndTarget.Canonical(id)))
+            assertEquals(false, session.nativeHolds.receive())
+            assertTrue(runtime.snapshot().state.calls.getValue(id).lifecycle is Lifecycle.Connected)
+        }
+
+        connect(first, firstBackend)
+        assertEquals(Outcome.Failure(CallError.Refused(RefusalReason.NotAllowed)),
+            runtime.startOutgoing(second, outgoing.line, outgoing.parties))
+        val beforeHold = runtime.snapshot().cursor
+        firstBackend.callbacks.await().setHeld(true)
+        val systemHold = runtime.observe(beforeHold).filterIsInstance<RuntimeFrame.ActionPerformed>().first().receipt
+        assertEquals(Action.Hold(first, true), systemHold.action)
+        assertEquals(ActionOrigin.SYSTEM, systemHold.origin)
+        assertTrue(firstBackend.nativeHolds.tryReceive().isFailure)
+
+        connect(second, secondBackend)
+        assertEquals(setOf(second), runtime.snapshot().state.participating)
+        assertEquals(Outcome.Failure(CallError.Refused(RefusalReason.NotAllowed)), runtime.setHeld(first, false))
+        assertTrue(firstBackend.nativeHolds.tryReceive().isFailure)
+        assertTrue(runtime.setHeld(first, true) is Outcome.Success)
+        assertTrue(firstBackend.nativeHolds.tryReceive().isFailure)
+
+        assertTrue(runtime.setHeld(second, true) is Outcome.Success)
+        assertEquals(true, secondBackend.nativeHolds.receive())
+        assertTrue(runtime.setHeld(first, false) is Outcome.Success)
+        assertEquals(false, firstBackend.nativeHolds.receive())
+        assertEquals(setOf(first), runtime.snapshot().state.participating)
+        for ((id, session) in listOf(first to firstBackend, second to secondBackend)) {
+            assertTrue(runtime.submit(Input.Request(Action.End(id), ActionID("end-${id.value}"))))
+            assertEquals(TelecomEnd.LOCAL, session.disconnected.await())
+            session.close.complete(Unit)
+        }
+        runtime.close()
     }
 
     @Test
@@ -242,11 +330,12 @@ class TelecomPortTest {
         assertEquals(TelecomEnd.REMOTE, telecomEnd(EndReason.Unanswered, Direction.OUTGOING))
     }
 
-    private class FakeBackend(private val disconnectError: Int? = null) : TelecomBackend<Long> {
+    private class FakeBackend(private val disconnectError: Int? = null, private val nativeID: Long = 101L) : TelecomBackend<Long> {
         val open = CompletableDeferred<Unit>()
         val close = CompletableDeferred<Unit>()
         val callbacks = CompletableDeferred<TelecomCallbacks>()
         val disconnected = CompletableDeferred<TelecomEnd>()
+        val nativeHolds = Channel<Boolean>(Channel.UNLIMITED)
         var answers = 0
             private set
 
@@ -256,12 +345,15 @@ class TelecomPortTest {
             this.callbacks.complete(callbacks)
             open.await()
             admitted(object : TelecomControl<Long> {
-                override val id = 101L
+                override val id = nativeID
                 override suspend fun answer() {
                     answers++
                     callbacks.answer()
                 }
-                override suspend fun setHeld(held: Boolean) = Unit
+                override suspend fun setHeld(held: Boolean) {
+                    callbacks.setHeld(held)
+                    nativeHolds.send(held)
+                }
                 override suspend fun disconnect(cause: TelecomEnd) {
                     check(disconnected.complete(cause))
                     disconnectError?.let { throw NativeTelecomFailure(it) }

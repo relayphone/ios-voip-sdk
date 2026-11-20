@@ -261,6 +261,7 @@ private class Reduction(
         current.outgoingProgress.forEach { progress ->
             val updated = records.getValue(record.call.id)
             when (progress) {
+                OutgoingProgress.CONNECTING -> markConnecting(updated)
                 OutgoingProgress.CONNECTED -> connect(updated)
                 OutgoingProgress.PROVIDE_MEDIA -> provideMedia(updated)
             }
@@ -339,7 +340,9 @@ private class Reduction(
         )
         put(arm(placing, TimerKind.PLACEMENT, deadline))
         if (rule == Rule.START) drain(record.call.id, EndTarget.Canonical(record.call.id))
-        if (records[record.call.id]?.placement?.attempt == attempt) effects += Effect.RequestPlacement(attempt, id, deadline)
+        if (records[record.call.id]?.placement?.attempt == attempt) {
+            effects += Effect.RequestPlacement(attempt, id, deadline, action.origin)
+        }
     }
 
     private fun placed(input: Input.Placed): Boolean {
@@ -351,6 +354,7 @@ private class Reduction(
             is PlacementResult.Failed -> failPlacement(record, CallError.PlacementFailed(result.cause))
             is PlacementResult.Refused -> failPlacement(record, CallError.Refused(result.reason))
             is PlacementResult.Placed -> placeWithAlias(record, result.remoteID)
+            PlacementResult.Expired -> deadline(record, CallError.DeadlineExceeded(TimedStage.PLACEMENT))
         }
         return true
     }
@@ -530,6 +534,26 @@ private class Reduction(
         records[input.callID]?.let(::connect)
     }
 
+    private fun markConnecting(record: Record) {
+        when (record.call.lifecycle) {
+            Lifecycle.Placing -> if (record.call.direction == Direction.OUTGOING) {
+                bufferOutgoingProgress(record, OutgoingProgress.CONNECTING)
+            }
+            Lifecycle.Dialing -> {
+                if (expireDue(record, TimerKind.NO_ANSWER)) return
+                if (record.nativeStart != null) bufferOutgoingProgress(record, OutgoingProgress.CONNECTING)
+                else put(beginConnecting(record), publish = true)
+            }
+            else -> Unit
+        }
+    }
+
+    private fun beginConnecting(record: Record): Record {
+        val connecting = cancel(record, TimerKind.NO_ANSWER).copy(call = record.call.copy(lifecycle = Lifecycle.Connecting))
+        return if (TimerKind.CONNECTION in connecting.timers) connecting
+            else arm(connecting, TimerKind.CONNECTION, now + budgets.connection)
+    }
+
     private fun connect(record: Record) {
         if (record.call.lifecycle.kind !in setOf(LifecycleKind.DIALING, LifecycleKind.CONNECTING)) return
         if (expireDue(record, TimerKind.NO_ANSWER, TimerKind.CONNECTION)) return
@@ -542,12 +566,7 @@ private class Reduction(
             commitConnected(record)
         } else if (!record.bufferedConnection) {
             trace(Rule.EARLY_CONNECTED)
-            val connecting = cancel(record, TimerKind.NO_ANSWER).copy(
-                call = record.call.copy(lifecycle = Lifecycle.Connecting), bufferedConnection = true,
-            )
-            val timed = if (TimerKind.CONNECTION in connecting.timers) connecting
-                else arm(connecting, TimerKind.CONNECTION, now + budgets.connection)
-            put(timed, publish = true)
+            put(beginConnecting(record).copy(bufferedConnection = true), publish = true)
         }
     }
 
@@ -634,6 +653,9 @@ private class Reduction(
     private fun applyRemote(record: Record, event: RemoteEvent, seen: SeenEvent) {
         if (!record.live) return
         when (event) {
+            is RemoteEvent.Connecting -> if (policy.connectionAuthority == ConnectionAuthority.APPLICATION) {
+                markConnecting(record)
+            }
             is RemoteEvent.Connected -> if (policy.connectionAuthority == ConnectionAuthority.APPLICATION) {
                 when {
                     record.call.lifecycle == Lifecycle.Placing && record.previousPreview == null ->

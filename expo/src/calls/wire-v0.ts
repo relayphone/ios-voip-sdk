@@ -15,7 +15,7 @@ const handle = union(
   object({ kind: literal('opaque'), value: text(1, 256, /\S/u) }),
 );
 export const line = object({ accountID: id<'account'>(), id: lineID, label: text() });
-const party = object({ id: id<'party'>(), handle, displayName: text() });
+export const party = object({ id: id<'party'>(), handle, displayName: text() });
 export const invitation = object({ callID, eventID, line, party });
 
 export const lifecycleKind = literal('reporting', 'ringing', 'placing', 'dialing', 'connecting',
@@ -33,7 +33,7 @@ const budgetFields = {
 const nonRefusalError = union(
   object({ kind: literal('unknownCall'), callID }),
   object({ kind: literal('invalidTransition'), state: lifecycleKind }),
-  object({ kind: literal('unsupported'), feature: literal('hold', 'video', 'tones', 'preview', 'merge') }),
+  object({ kind: literal('unsupported'), feature: literal('hold', 'video', 'tones', 'preview', 'merge', 'mute') }),
   object({ kind: literal('permissionRequired'), permission: literal('microphone', 'camera') }),
   object({ kind: literal('authorityUnavailable'), cause: literal('credentialsUnavailable', 'network', 'invalidResponse') }),
   object({ kind: literal('claimTimedOut'), actionID }),

@@ -46,7 +46,7 @@
     "nonRefusalError": {"oneOf": [
       {"type":"object","properties":{"kind":{"const":"unknownCall"},"callID":{"$ref":"#/$defs/id"}},"required":["kind","callID"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"invalidTransition"},"state":{"$ref":"#/$defs/state"}},"required":["kind","state"],"additionalProperties":false},
-      {"type":"object","properties":{"kind":{"const":"unsupported"},"feature":{"enum":["hold","video","tones","preview","merge"]}},"required":["kind","feature"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"unsupported"},"feature":{"enum":["hold","video","tones","preview","merge","mute"]}},"required":["kind","feature"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"permissionRequired"},"permission":{"enum":["microphone","camera"]}},"required":["kind","permission"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"authorityUnavailable"},"cause":{"enum":["credentialsUnavailable","network","invalidResponse"]}},"required":["kind","cause"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"claimTimedOut"},"actionID":{"$ref":"#/$defs/id"}},"required":["kind","actionID"],"additionalProperties":false},

@@ -1,8 +1,8 @@
-import { literal, object, union, type Decoder } from "../calls/decode.ts";
+import { integer, literal, nonempty, object, timestamp, union, type Decoder } from "../calls/decode.ts";
 import { createCallsStore } from "../calls/store.ts";
 import { callID, eventID, type Call, type CallError, type CallingLine, type EndReason } from "../calls/model.ts";
 import { bridgeError, ended, incomingOutcome, performed, type IncomingOutcome } from "../calls/receipts.ts";
-import { line as callingLine } from "../calls/wire-v0.ts";
+import { actionID, line as callingLine, party as callingParty } from "../calls/wire-v0.ts";
 import type { NativeEvents, NativeTransport } from "./transport.ts";
 import type {
   Conversation, ConversationEnd, ConversationErrorCode, ConversationId, IncomingCallPayload, IncomingConversationOutcome,
@@ -12,13 +12,20 @@ import type {
 type Handle = Call["parties"][number]["handle"];
 type EventValue = NativeEvents[keyof NativeEvents];
 type RemoteEventInput =
+  | { kind: "connecting" | "connected" }
   | { kind: "ended"; reason: ReturnType<typeof remoteReason> }
   | { kind: "partiesChanged"; parties: readonly ReturnType<typeof party>[] };
 type CommandInput =
-  | { id: ConversationId; action: { kind: "answer" | "end" } }
+  | { id: ConversationId; action: { kind: "answer" | "end" } | { kind: "hold"; held: boolean } }
+  | { id: ConversationId; lineID: string; parties: readonly ReturnType<typeof party>[]; video: boolean }
+  | { attached: boolean; generation: number }
+  | { actionID: string; generation: number; result: PlacementSettlement }
   | { kind: MediaKind }
   | (RemoteEventInput & { target: { kind: "call"; id: string }; eventID: string })
   | { callID: string; eventID: string; line: CallingLine; party: ReturnType<typeof callerParty> };
+type PlacementSettlement =
+  | { ok: true; value: { kind: "placed" } }
+  | { ok: false; error: { kind: "placementFailed"; cause: "handlerFailed" } };
 
 const negotiated = object({
   kind: literal("negotiated"),
@@ -27,9 +34,29 @@ const negotiated = object({
 const permissionStatus = object({ kind: literal("granted", "denied", "restricted", "notDetermined") });
 const received = object({ kind: literal("applied", "buffered", "duplicate") });
 const refused = object({ ok: literal(false), error: bridgeError });
+const settled = object({ kind: literal("accepted", "stale") });
+const voidReply: Decoder<null> = value => {
+  if (value !== null) throw new TypeError("Invalid placement attachment reply");
+  return null;
+};
+const placementIdentity = { generation: integer(1), actionID };
+const placementFrame = union(
+  object({
+    kind: literal("placementRequested"), ...placementIdentity, deadline: timestamp, remainingMs: integer(1),
+    request: object({
+      kind: literal("start"), origin: literal("app", "system"), callID, line: callingLine, parties: nonempty(callingParty),
+    }),
+  }),
+  object({
+    kind: literal("placementCancelled"), ...placementIdentity,
+    reason: literal("replaced", "detached", "ended", "deadlineExceeded", "reset"),
+  }),
+);
+const capabilities = { hold: true, merge: false, tones: false, video: false };
 
 export interface AndroidBridgeEvents {
   bridgeFrame: { json: string };
+  placementFrame: { json: string };
   incomingPush: { json: string };
   pushTokenUpdated: NativeEvents["pushTokenUpdated"];
 }
@@ -87,7 +114,8 @@ export function bindAndroid(native: AndroidBridge) {
       operation: literal(operation),
       result: union(object({ ok: literal(true), value: raw => ({ decoded: decode(raw) }) }), refused),
     })(JSON.parse(await native.command(JSON.stringify({ kind: "command", operation, input }))));
-    if (!reply.result.ok) throw commandError(reply.result.error);
+    const outgoingControl = operation === "start" || input !== undefined && "action" in input && input.action.kind === "hold";
+    if (!reply.result.ok) throw commandError(reply.result.error, outgoingControl);
     return reply.result.value.decoded;
   }
 
@@ -104,13 +132,38 @@ export function bindAndroid(native: AndroidBridge) {
     }
     if (observation.kind === "actionPerformed") {
       const { origin, action } = observation.receipt;
-      if (action.kind === "answer" || action.kind === "end" || action.kind === "hold") {
-        const { callID, ...performed } = action;
-        emit("conversationEvent", { type: "actionPerformed", payload: {
-          conversationId: conversationID(callID), origin, action: performed,
-        } });
-      }
+      const { callID, ...details } = action;
+      const performed = details.kind === "start" ? { kind: "start" } as const : details;
+      if (performed.kind === "start" || performed.kind === "answer" || performed.kind === "end" || performed.kind === "hold")
+        emit("conversationEvent", { type: "actionPerformed", payload: { conversationId: conversationID(callID), origin, action: performed } });
     }
+  });
+  let generation = 0;
+  let registration = Promise.resolve<Error | null>(null);
+  const delivered = new Map<string, number>();
+  native.addListener("placementFrame", ({ json }) => {
+    const frame = placementFrame(JSON.parse(json));
+    if (frame.generation !== generation) return;
+    const { actionID } = frame;
+    if (frame.kind === "placementCancelled") {
+      emit("actionCancelled", { actionID, generation, reason: frame.reason });
+      return;
+    }
+    const now = Date.now();
+    const deadline = Math.min(Date.parse(frame.deadline), now + frame.remainingMs);
+    for (const [id, expiry] of delivered) {
+      if (expiry <= now) delivered.delete(id);
+    }
+    if (deadline <= now || delivered.has(actionID)) return;
+    delivered.set(actionID, deadline);
+    const { origin, kind, callID, parties } = frame.request;
+    emit("handlerAction", {
+      actionID, generation, origin, kind, deadline: new Date(deadline).toISOString(),
+      conversation: {
+        id: conversationID(callID), direction: "outgoing", status: "dialing", members: members(parties),
+        isVideo: false, isMuted: false, capabilities,
+      },
+    });
   });
   async function perform(id: ConversationId, kind: "answer" | "end") {
     const request = { id, action: { kind } };
@@ -178,12 +231,44 @@ export function bindAndroid(native: AndroidBridge) {
     getConversations: async () => current,
     getAudioRoutes: async () => ({ revision: 0, routes: [], current: null }),
     getPushToken: () => native.getPushToken(),
-    setHandlerAttached(attached) { if (attached) unsupported("Call placement"); },
-    settleAction() { unsupported("Call placement"); },
-    startConversation: async () => unsupported("Outgoing calls"),
+    setHandlerAttached(attached, nextGeneration) {
+      generation = nextGeneration;
+      delivered.clear();
+      registration = command("placement.attach", voidReply, { attached, generation })
+        .catch(() => failure("conversation", "Could not register the call placement handler"));
+    },
+    settleAction(actionID, generation, success) {
+      const result: PlacementSettlement = success
+        ? { ok: true, value: { kind: "placed" } }
+        : { ok: false, error: { kind: "placementFailed", cause: "handlerFailed" } };
+      void command("placement.settle", settled, { actionID, generation, result }).catch(() => {});
+    },
+    async startConversation(options) {
+      if (options.video) return unsupported("Video");
+      const lineID = configuredLine().id;
+      const to = party(options.to);
+      let id: ConversationId;
+      try {
+        id = conversationID(options.id);
+        callingParty(to);
+      } catch {
+        throw failure("invalid_arguments", "Invalid outgoing call arguments");
+      }
+      const error = await registration;
+      if (error) throw error;
+      const { action } = (await command("start", performed, { id, lineID, parties: [to], video: false })).receipt;
+      if (action.kind !== "start" || action.callID !== callID(id)) throw failure("conversation", "Invalid Start receipt");
+      return id;
+    },
     joinConversation: id => perform(id, "answer"),
     endConversation: id => perform(id, "end"),
-    setHeld: async () => unsupported("Hold"),
+    async setHeld(id, held) {
+      const status = current.conversations.find(call => call.id === id)?.status;
+      if (held && status === "held" || !held && (status === "connected" || status === "reconnecting")) return;
+      const { action } = (await command("perform", performed, { id, action: { kind: "hold", held } })).receipt;
+      if (action.kind !== "hold" || action.callID !== callID(id) || action.held !== held)
+        throw failure("conversation", "Invalid Hold receipt");
+    },
     setMuted: async () => unsupported("Mute"),
     setConversationVideo: async () => unsupported("Video"),
     playTones: async () => unsupported("Tones"),
@@ -199,7 +284,9 @@ export function bindAndroid(native: AndroidBridge) {
     },
     async reportConversation(id, report) {
       switch (report.type) {
-        case "connected": return unsupported("Connected reports");
+        case "connecting": case "connected":
+          await receive(id, { kind: report.type });
+          break;
         case "ended":
           if (report.reason === "local") await perform(id, "end");
           else await receive(id, { kind: "ended", reason: remoteReason(report.reason) });
@@ -208,7 +295,6 @@ export function bindAndroid(native: AndroidBridge) {
           if (report.video !== undefined) return unsupported("Video");
           if (report.members) await receive(id, { kind: "partiesChanged", parties: report.members.map(party) });
           break;
-        case "connecting": return unsupported("Explicit connecting reports");
       }
     },
     async receiveCallEnded(payload) {
@@ -243,14 +329,20 @@ function failure(code: ConversationErrorCode, message: string, nativeCode?: numb
   if (nativeCode !== undefined) error.nativeCode = nativeCode;
   return error;
 }
-function commandError(error: CallError) {
+function commandError(error: CallError, outgoingControl = false) {
   switch (error.kind) {
     case "unknownCall": return failure("unknown_conversation", "Unknown conversation");
     case "unsupported": return failure("unsupported", `${error.feature} is unavailable on Android`);
     case "permissionRequired": return failure("not_foreground", "Open the app to request permission");
     case "deadlineExceeded": return failure("deadline_exceeded", "The call action expired");
     case "placementFailed": return failure("handler_failed", "Conversation handler failed");
-    case "refused": return failure("refused", "The call action was refused");
+    case "invalidConfiguration": return failure("invalid_arguments", "Invalid call configuration");
+    case "invalidTransition": return outgoingControl
+      ? failure("invalid_arguments", "The conversation's status doesn't allow this action")
+      : failure("conversation", "The call action failed");
+    case "refused": return outgoingControl && error.reason.kind === "notAllowed"
+      ? failure("invalid_arguments", "The participation limit doesn't allow this action")
+      : failure("refused", "The call action was refused");
     case "systemFailed": return failure("conversation", "Android Telecom could not complete the call action", error.cause.code);
     default: return failure("conversation", "The call action failed");
   }
@@ -273,6 +365,9 @@ function participant(handle: Handle) {
     : handle.kind === "email" ? { email: handle.address } : {};
   return member;
 }
+function members(parties: Call["parties"]) {
+  return parties.map(({ id, handle, displayName }) => ({ ...participant(handle), id, displayName }));
+}
 function remoteReason(kind: Exclude<EndedReason, "local">) {
   return kind === "failed" ? { kind, error: { kind: "serverFailed" } } : { kind };
 }
@@ -281,7 +376,14 @@ function end(at: string, reason: EndReason) {
     case "localDeclined": case "localEnded": return { at, reason: "local" } satisfies ConversationEnd;
     case "filtered": return { at, reason: "failed", failure: { kind: "filtered",
       cause: reason.cause === "unknown" ? "other" : reason.cause } } satisfies ConversationEnd;
-    case "failed": return { at, reason: "failed", ...(reason.error.kind === "serverFailed" && { failure: { kind: "server" } }) } satisfies ConversationEnd;
+    case "failed": {
+      const error = reason.error;
+      if (error.kind === "placementFailed" || error.kind === "deadlineExceeded" && error.stage === "placement")
+        return { at, reason: "failed", failure: { kind: "notPlaced" } } satisfies ConversationEnd;
+      if (error.kind === "systemFailed" && error.cause.kind === "start")
+        return { at, reason: "failed", failure: { kind: "refused" } } satisfies ConversationEnd;
+      return { at, reason: "failed", ...(error.kind === "serverFailed" && { failure: { kind: "server" } }) } satisfies ConversationEnd;
+    }
     default: return { at, reason: reason.kind } satisfies ConversationEnd;
   }
 }
@@ -289,13 +391,16 @@ function snapshot(calls: readonly Call[], revision: number) {
   const conversations = calls.map<Conversation>(call => {
     const base = {
       id: conversationID(call.id),
-      members: call.parties.map(({ id, handle, displayName }) => ({ ...participant(handle), id, displayName })),
-      capabilities: { hold: false, merge: false, tones: false, video: false },
+      members: members(call.parties),
+      capabilities,
       isVideo: call.video.confirmed === "video", isMuted: call.muted, direction: call.direction,
       ...(call.media.owner === "native" && call.media.stage === "prepared" && { media: "native" as const }),
     };
     const lifecycle = call.lifecycle;
-    if (call.held && lifecycle.kind !== "ending" && lifecycle.kind !== "ended") return { ...base, status: "held" };
+    if (call.held && lifecycle.kind !== "ending" && lifecycle.kind !== "ended") {
+      if ("connectedAt" in lifecycle) return { ...base, status: "held", connectedAt: lifecycle.connectedAt };
+      return { ...base, status: "held" };
+    }
     switch (lifecycle.kind) {
       case "ringing": return { ...base, direction: "incoming", status: "ringing" };
       case "placing": case "dialing": return { ...base, direction: "outgoing", status: "dialing" };

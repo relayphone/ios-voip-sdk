@@ -16,7 +16,7 @@ internal class BridgeState(private val owner: Owner, private val authority: Bool
 
     private val records = buildJsonArray {
         for (feature in listOf("hold", "video", "tones", "preview", "prejoin", "merge", "audioRoutes", "nativeAnswerAuthority")) {
-            val availability = if (feature == "nativeAnswerAuthority" && authority)
+            val availability = if (feature == "hold" || feature == "nativeAnswerAuthority" && authority)
                 message("available")
             else message("unavailable", "reason" to JsonPrimitive(if (feature == "nativeAnswerAuthority") "disabledByPolicy" else "notImplemented"))
             add(model(1, "capability", buildJsonObject {

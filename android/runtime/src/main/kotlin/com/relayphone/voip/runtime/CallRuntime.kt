@@ -1,10 +1,13 @@
 package com.relayphone.voip.runtime
 
-import com.relayphone.voip.Attempt
+import com.relayphone.voip.Action
+import com.relayphone.voip.ActionID
 import com.relayphone.voip.ActionReceipt
+import com.relayphone.voip.Attempt
 import com.relayphone.voip.Call
 import com.relayphone.voip.CallError
 import com.relayphone.voip.CallID
+import com.relayphone.voip.CallingLine
 import com.relayphone.voip.CommandReceipt
 import com.relayphone.voip.Configuration
 import com.relayphone.voip.Effect
@@ -13,6 +16,7 @@ import com.relayphone.voip.Input
 import com.relayphone.voip.Lifecycle
 import com.relayphone.voip.Now
 import com.relayphone.voip.Outcome
+import com.relayphone.voip.Party
 import com.relayphone.voip.PlacementResult
 import com.relayphone.voip.ReceiveDisposition
 import com.relayphone.voip.RemovalCompletion
@@ -24,6 +28,7 @@ import com.relayphone.voip.SystemFailureDetail
 import com.relayphone.voip.SystemOperation
 import com.relayphone.voip.reduce
 import java.util.Collections
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
@@ -66,6 +71,7 @@ public class CallRuntime private constructor(
     private val scope = CoroutineScope(parent.coroutineContext + lifetime)
     private val inbox = Channel<Message>(Channel.UNLIMITED, onUndeliveredElement = { message ->
         if (message is Message.Command) message.reply.complete(null)
+        if (message is Message.Perform) message.reply.complete(Outcome.Failure(CallError.BridgeUnavailable))
     })
     private val accepting = AtomicBoolean(true)
     private val calls = mutableMapOf<CallID, CallWork>()
@@ -73,6 +79,7 @@ public class CallRuntime private constructor(
     private val startSetups = mutableMapOf<Attempt, StartSetup>()
     private val placementJobs = mutableMapOf<Attempt, Job>()
     private val admissions = mutableMapOf<Attempt, CompletableDeferred<IncomingResult.Decision?>>()
+    private val actions = mutableMapOf<ActionID, CompletableDeferred<Outcome<ActionReceipt, CallError>>>()
     private val current = MutableStateFlow(State(configuration))
     private val journal = RuntimeJournal(current.value, replayCapacity)
     private var eventSequence = 0L
@@ -96,6 +103,10 @@ public class CallRuntime private constructor(
                 for (message in inbox) {
                     when (message) {
                         is Message.Deliver -> deliver(message.input)
+                        is Message.Perform -> {
+                            actions[message.id] = message.reply
+                            deliver(message.input)
+                        }
                         is Message.Command -> {
                             try {
                                 val receipt = deliver(message.input)
@@ -131,6 +142,24 @@ public class CallRuntime private constructor(
 
     /** Observes a snapshot and subsequent frames, or replays strictly after [after]. */
     public fun observe(after: RuntimeCursor? = null): Flow<RuntimeObservation> = journal.observe(after)
+
+    /** Waits for outgoing placement and platform admission. */
+    public suspend fun startOutgoing(
+        callID: CallID, line: CallingLine, parties: List<Party>, video: Boolean = false,
+    ): Outcome<ActionReceipt, CallError> = perform { Input.Start(callID, line, parties, video, it) }
+
+    /** Waits for platform confirmation of an application Hold or Resume. */
+    public suspend fun setHeld(callID: CallID, held: Boolean): Outcome<ActionReceipt, CallError> =
+        perform { Input.Request(Action.Hold(callID, held), it, supported = true) }
+
+    private suspend fun perform(request: (ActionID) -> Input): Outcome<ActionReceipt, CallError> {
+        val id = ActionID(UUID.randomUUID().toString())
+        val reply = CompletableDeferred<Outcome<ActionReceipt, CallError>>()
+        if (!accepting.get() || inbox.trySend(Message.Perform(request(id).copyParties(), id, reply)).isFailure) {
+            return Outcome.Failure(CallError.BridgeUnavailable)
+        }
+        return reply.await()
+    }
 
     /** Reports an invitation and waits for the decision of its original admission attempt. */
     public suspend fun reportIncoming(input: Input.Incoming): Outcome<IncomingResult, CallError> {
@@ -204,6 +233,8 @@ public class CallRuntime private constructor(
             placementJobs.clear()
             admissions.values.forEach { it.complete(null) }
             admissions.clear()
+            actions.values.forEach { it.complete(Outcome.Failure(CallError.BridgeUnavailable)) }
+            actions.clear()
             publish(State(current.value.configuration), null)
         }
     }
@@ -229,11 +260,14 @@ public class CallRuntime private constructor(
             }
             transition.terminalCompletions.forEach { add(RuntimeEvent.TerminalCompleted(++eventSequence, it)) }
         }
-        publish(transition.state, input, removal, events, transition.actionPerformed.takeUnless { receiptsOnly })
+        val performed = transition.actionPerformed.takeUnless { receiptsOnly }
+        publish(transition.state, input, removal, events, performed)
+        performed?.let { actions.remove(it.actionID)?.complete(Outcome.Success(it)) }
         if (input is Input.AnswerConfirmed && !receiptsOnly) {
             system.completeAnswer(input, (transition.receipt as CommandReceipt.Answered).outcome)
         }
         transition.effects.forEach { effect ->
+            if (effect is Effect.RejectAction) actions.remove(effect.actionID)?.complete(Outcome.Failure(effect.error))
             if (!receiptsOnly || effect is Effect.SettleAction || effect is Effect.RejectAction) {
                 execute(effect, previous)
             }
@@ -431,6 +465,9 @@ public class CallRuntime private constructor(
 
     private sealed interface Message {
         data class Deliver(val input: Input) : Message
+        data class Perform(
+            val input: Input, val id: ActionID, val reply: CompletableDeferred<Outcome<ActionReceipt, CallError>>,
+        ) : Message
         data class Command(val input: Input, val reply: CompletableDeferred<CommandReply?>) : Message
         data class StartSetupResolved(val attempt: Attempt) : Message
         data class Finished(val attempt: Attempt, val job: Job) : Message
