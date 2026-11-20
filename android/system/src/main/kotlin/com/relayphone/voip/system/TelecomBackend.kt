@@ -15,6 +15,7 @@ internal interface TelecomBackend<NativeID : Any> {
 
 internal interface TelecomControl<NativeID : Any> {
     val id: NativeID
+    val audio: TelecomAudioControl? get() = null
     suspend fun answer()
     suspend fun setHeld(held: Boolean)
     suspend fun disconnect(cause: TelecomEnd)

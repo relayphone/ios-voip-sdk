@@ -12,10 +12,11 @@ internal class BridgeState(private val owner: Owner, private val authority: Bool
     private var initialized = false
     private var sender: ((String) -> Unit)? = null
     private var pushHealth: JsonObject? = null
+    private var audioCapabilities = capabilitiesForAudio(false)
     private var pushCapabilities = emptyList<JsonObject>()
 
     private val records = buildJsonArray {
-        for (feature in listOf("hold", "video", "tones", "preview", "prejoin", "merge", "audioRoutes", "nativeAnswerAuthority")) {
+        for (feature in listOf("hold", "video", "preview", "prejoin", "merge", "nativeAnswerAuthority")) {
             val availability = if (feature == "nativeAnswerAuthority" && authority)
                 message("available")
             else message("unavailable", "reason" to JsonPrimitive(if (feature == "nativeAnswerAuthority") "disabledByPolicy" else "notImplemented"))
@@ -52,7 +53,7 @@ internal class BridgeState(private val owner: Owner, private val authority: Bool
         })
         put("completed", encode(scope?.completedTerminalCalls.orEmpty()))
         pushHealth?.let { put("pushHealth", it) }
-        put("records", JsonArray(records + pushCapabilities))
+        put("records", JsonArray(records + audioCapabilities + pushCapabilities))
     }
 
     @Synchronized
@@ -72,6 +73,14 @@ internal class BridgeState(private val owner: Owner, private val authority: Bool
             pushCapabilities = capabilities
             capabilities.forEach { emit("record", "record" to it) }
         }
+    }
+
+    @Synchronized
+    fun updateAudio(available: Boolean) {
+        val capabilities = capabilitiesForAudio(available)
+        if (audioCapabilities == capabilities) return
+        audioCapabilities = capabilities
+        capabilities.forEach { emit("record", "record" to it) }
     }
 
     @Synchronized
@@ -148,3 +157,8 @@ private fun capability(feature: String, block: String?) = model(1, "capability",
     put("availability", if (block == null) message("available")
         else message("unavailable", "reason" to JsonPrimitive(block)))
 })
+
+private fun capabilitiesForAudio(available: Boolean) = listOf(
+    capability("audioRoutes", if (available) null else "requiresSystemVersion"),
+    capability("tones", if (available) null else "requiresMediaProvider"),
+)

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
 import { bindAndroid, type AndroidBridge, type AndroidBridgeEvents } from '../../src/conversations/android.ts';
-import type { PushTokenSnapshot } from '../../src/conversations/transport.ts';
+import type { AudioRoutesSnapshot, NativeEvents, PushTokenSnapshot } from '../../src/conversations/transport.ts';
 import type { JSONValue } from '../../src/conversations/types.ts';
 import incomingCall from '../../../spec/fixtures/valid/incoming.json' with { type: 'json' };
 
@@ -109,4 +109,94 @@ test('Android exposes an incoming conversation only after system admission, as o
   assert.deepEqual(snapshots, []);
   emit('bridgeFrame', { json: JSON.stringify({ cursor: cursor(2), kind: 'record', record: incomingCall }) });
   assert.deepEqual(snapshots, [['ringing']]);
+});
+
+test('Android audio routes use the iOS snapshot and selection shapes', async () => {
+  const { native, emit } = bridgeHarness();
+  const earpiece = { id: 'receiver', name: 'Earpiece', type: 'builtInReceiver' } as const;
+  const speaker = { id: 'speaker', name: 'Speaker', type: 'builtInSpeaker' } as const;
+  const bluetooth = { id: 'bluetooth', name: 'Headset', type: 'bluetooth' } as const;
+  const initial = { revision: 1, routes: [earpiece, speaker], current: earpiece } satisfies AudioRoutesSnapshot;
+  let current: AudioRoutesSnapshot = initial;
+  let unsupported = false;
+  native.command = async source => {
+    const request = JSON.parse(source);
+    const { operation } = request;
+    let result;
+    if (operation === 'audio.routes') result = { ok: true, value: current };
+    else {
+      assert.equal(operation, 'audio.select');
+      if (unsupported) result = { ok: false, error: { kind: 'unsupported', feature: 'audioRoutes' } };
+      else if (request.input.id === speaker.id) result = { ok: true, value: null };
+      else result = { ok: false, error: { kind: 'systemFailed', cause: { platform: 'android', kind: 'audio' } } };
+    }
+    return JSON.stringify({ kind: 'reply', operation, result });
+  };
+  const calls = bindAndroid(native);
+  const events: NativeEvents['audioRoutesChanged'][] = [];
+  calls.addListener('audioRoutesChanged', value => events.push(value));
+  assert.deepEqual(await calls.getAudioRoutes(), initial);
+  assert.equal(await calls.selectAudioRoute(speaker.id), undefined);
+  assert.deepEqual(await calls.getAudioRoutes(), initial);
+  assert.deepEqual(events, []);
+  const selected = { ...initial, revision: 2, current: speaker };
+  current = { revision: 3, routes: [earpiece, speaker, bluetooth], current: bluetooth };
+  for (const value of [initial, selected, selected, current, selected]) {
+    emit('audioRoutesChanged', { json: JSON.stringify(value) });
+  }
+  assert.deepEqual(events, [initial, selected, current]);
+  assert.deepEqual(await calls.getAudioRoutes(), current);
+  await assert.rejects(calls.selectAudioRoute('removed'), {
+    code: 'conversation', message: 'The audio route is unavailable or refused',
+  });
+  unsupported = true;
+  await assert.rejects(calls.selectAudioRoute(speaker.id), { code: 'unsupported' });
+});
+
+test('Android mute and tones project the iOS action shapes after confirmed state', async () => {
+  const { native, emit, setSnapshot } = bridgeHarness();
+  const callID = incomingCall.value.id;
+  const cursor = (sequence: number) => ({ epoch: 'android-a', sequence });
+  let sequence = 0;
+  setSnapshot({ cursor: cursor(sequence), calls: [incomingCall.value] });
+  const frame = (value: { readonly [key: string]: JSONValue }) =>
+    emit('bridgeFrame', { json: JSON.stringify({ ...value, cursor: cursor(++sequence) }) });
+  const receipts: NativeEvents['conversationEvent'][] = [];
+  native.command = async source => {
+    const request = JSON.parse(source);
+    assert.equal(request.operation, 'perform');
+    assert.equal(request.input.id, callID);
+    const action = request.input.action;
+    if (action.kind === 'mute') {
+      assert.equal(action.muted, true);
+      frame({ kind: 'record', record: { ...incomingCall, value: { ...incomingCall.value, muted: true } } });
+    } else {
+      assert.deepEqual(action, { kind: 'tones', digits: ['1', '2', '*', '#', 'A', 'b'] });
+    }
+    const receipt = { actionID: `audio-${sequence}`, origin: 'app', action: { ...action, callID } };
+    frame({ kind: 'actionPerformed', receipt });
+    return JSON.stringify({
+      kind: 'reply', operation: 'perform',
+      result: { ok: true, value: { kind: 'performed', cursor: cursor(sequence), receipt } },
+    });
+  };
+  const calls = bindAndroid(native);
+  const id = calls.snapshot.conversations[0]!.id;
+  calls.addListener('conversationEvent', value => receipts.push(value));
+  assert.equal(await calls.setMuted(id, true), undefined);
+  assert.equal(calls.snapshot.conversations[0]?.isMuted, true);
+  await calls.setMuted(id, true);
+  frame({ kind: 'record', record: incomingCall });
+  frame({ kind: 'actionPerformed', receipt: {
+    actionID: 'system-mute', origin: 'system', action: { kind: 'mute', muted: false, callID },
+  } });
+  assert.equal(calls.snapshot.conversations[0]?.isMuted, false);
+  assert.equal(await calls.playTones(id, '12*#Ab'), undefined);
+  await assert.rejects(calls.playTones(id, ''), { code: 'invalid_arguments' });
+  await assert.rejects(calls.playTones(id, '1E'), { code: 'invalid_arguments' });
+  assert.deepEqual(receipts, [
+    { type: 'actionPerformed', payload: { conversationId: id, origin: 'app', action: { kind: 'mute', muted: true } } },
+    { type: 'actionPerformed', payload: { conversationId: id, origin: 'system', action: { kind: 'mute', muted: false } } },
+    { type: 'actionPerformed', payload: { conversationId: id, origin: 'app', action: { kind: 'tones', digits: '12*#Ab' } } },
+  ]);
 });

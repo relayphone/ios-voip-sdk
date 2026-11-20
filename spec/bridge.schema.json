@@ -78,7 +78,7 @@
       {"type":"object","properties":{"kind":{"const":"hold"},"held":{"type":"boolean"}},"required":["kind","held"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"mute"},"muted":{"type":"boolean"}},"required":["kind","muted"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"video"},"enabled":{"type":"boolean"}},"required":["kind","enabled"],"additionalProperties":false},
-      {"type":"object","properties":{"kind":{"const":"tones"},"digits":{"type":"array","items":{"enum":["0","1","2","3","4","5","6","7","8","9","*","#"]},"minItems":1}},"required":["kind","digits"],"additionalProperties":false}
+      {"type":"object","properties":{"kind":{"const":"tones"},"digits":{"type":"array","items":{"enum":["0","1","2","3","4","5","6","7","8","9","*","#","A","B","C","D","a","b","c","d"]},"minItems":1}},"required":["kind","digits"],"additionalProperties":false}
     ]},
     "performInput": {"type":"object","properties":{"id":{"$ref":"#/$defs/id"},"action":{"$ref":"#/$defs/action"}},"required":["id","action"],"additionalProperties":false},
     "bindRemoteInput": {"type":"object","properties":{"id":{"$ref":"#/$defs/id"},"remoteID":{"$ref":"#/$defs/id"}},"required":["id","remoteID"],"additionalProperties":false},
@@ -109,6 +109,8 @@
       {"type":"object","properties":{"kind":{"const":"command"},"operation":{"const":"reportIncoming"},"input":{"$ref":"#/$defs/invitation"}},"required":["kind","operation","input"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"command"},"operation":{"enum":["permissions.read","permissions.request"]},"input":{"$ref":"#/$defs/permission"}},"required":["kind","operation","input"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"command"},"operation":{"enum":["push.registration","push.health"]}},"required":["kind","operation"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"command"},"operation":{"const":"audio.routes"}},"required":["kind","operation"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"command"},"operation":{"const":"audio.select"},"input":{"type":"object","properties":{"id":{"type":"string","minLength":1}},"required":["id"],"additionalProperties":false}},"required":["kind","operation","input"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"command"},"operation":{"const":"placement.attach"},"input":{"$ref":"#/$defs/placementAttach"}},"required":["kind","operation","input"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"command"},"operation":{"const":"placement.settle"},"input":{"$ref":"#/$defs/placementSettle"}},"required":["kind","operation","input"],"additionalProperties":false}
     ]},
@@ -130,12 +132,14 @@
     "unknownPushState": {"type":"object","properties":{"kind":{"const":"unknown"}},"required":["kind"],"additionalProperties":false},
     "pushRegistration": {"oneOf":[{"$ref":"https://relayphone.github.io/voip-sdk/spec/v1/model.schema.json#/$defs/pushRegistration"},{"$ref":"#/$defs/unknownPushState"}]},
     "pushHealth": {"oneOf":[{"$ref":"https://relayphone.github.io/voip-sdk/spec/v1/model.schema.json#/$defs/pushHealth"},{"$ref":"#/$defs/unknownPushState"}]},
+    "audioRoute": {"type":"object","properties":{"id":{"type":"string","minLength":1},"name":{"type":"string"},"type":{"enum":["builtInReceiver","builtInSpeaker","headphones","bluetooth","airPlay","carAudio","usbAudio","other"]}},"required":["id","name","type"],"additionalProperties":false},
+    "audioRoutes": {"type":"object","properties":{"revision":{"$ref":"#/$defs/positiveInteger"},"routes":{"type":"array","items":{"$ref":"#/$defs/audioRoute"}},"current":{"oneOf":[{"$ref":"#/$defs/audioRoute"},{"const":null}]}},"required":["revision","routes","current"],"additionalProperties":false},
     "placementReceipt": {"type":"object","properties":{"kind":{"enum":["accepted","stale"]}},"required":["kind"],"additionalProperties":false},
     "failedReply": {
       "type":"object",
       "properties":{
         "kind":{"const":"reply"},
-        "operation":{"enum":["start","perform","bindRemote","receive","reportIncoming","permissions.read","permissions.request","push.registration","push.health","placement.attach","placement.settle"]},
+        "operation":{"enum":["start","perform","bindRemote","receive","reportIncoming","permissions.read","permissions.request","push.registration","push.health","placement.attach","placement.settle","audio.routes","audio.select"]},
         "result":{"type":"object","properties":{"ok":{"const":false},"error":{"$ref":"#/$defs/error"}},"required":["ok","error"],"additionalProperties":false}
       },
       "required":["kind","operation","result"],"additionalProperties":false
@@ -144,12 +148,13 @@
       {"$ref":"#/$defs/failedReply"},
       {"type":"object","properties":{"kind":{"const":"reply"},"operation":{"const":"start"},"result":{"type":"object","properties":{"ok":{"const":true},"value":{"$ref":"#/$defs/performed"}},"required":["ok","value"],"additionalProperties":false}},"required":["kind","operation","result"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"reply"},"operation":{"const":"perform"},"result":{"type":"object","properties":{"ok":{"const":true},"value":{"oneOf":[{"$ref":"#/$defs/performed"},{"$ref":"#/$defs/endOutcome"}]}},"required":["ok","value"],"additionalProperties":false}},"required":["kind","operation","result"],"additionalProperties":false},
-      {"type":"object","properties":{"kind":{"const":"reply"},"operation":{"enum":["bindRemote","placement.attach"]},"result":{"type":"object","properties":{"ok":{"const":true},"value":{"const":null}},"required":["ok","value"],"additionalProperties":false}},"required":["kind","operation","result"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"reply"},"operation":{"enum":["bindRemote","placement.attach","audio.select"]},"result":{"type":"object","properties":{"ok":{"const":true},"value":{"const":null}},"required":["ok","value"],"additionalProperties":false}},"required":["kind","operation","result"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"reply"},"operation":{"const":"receive"},"result":{"type":"object","properties":{"ok":{"const":true},"value":{"$ref":"#/$defs/received"}},"required":["ok","value"],"additionalProperties":false}},"required":["kind","operation","result"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"reply"},"operation":{"const":"reportIncoming"},"result":{"type":"object","properties":{"ok":{"const":true},"value":{"$ref":"#/$defs/incomingOutcome"}},"required":["ok","value"],"additionalProperties":false}},"required":["kind","operation","result"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"reply"},"operation":{"enum":["permissions.read","permissions.request"]},"result":{"type":"object","properties":{"ok":{"const":true},"value":{"$ref":"#/$defs/permissionState"}},"required":["ok","value"],"additionalProperties":false}},"required":["kind","operation","result"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"reply"},"operation":{"const":"push.registration"},"result":{"type":"object","properties":{"ok":{"const":true},"value":{"$ref":"#/$defs/pushRegistration"}},"required":["ok","value"],"additionalProperties":false}},"required":["kind","operation","result"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"reply"},"operation":{"const":"push.health"},"result":{"type":"object","properties":{"ok":{"const":true},"value":{"$ref":"#/$defs/pushHealth"}},"required":["ok","value"],"additionalProperties":false}},"required":["kind","operation","result"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"reply"},"operation":{"const":"audio.routes"},"result":{"type":"object","properties":{"ok":{"const":true},"value":{"$ref":"#/$defs/audioRoutes"}},"required":["ok","value"],"additionalProperties":false}},"required":["kind","operation","result"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"reply"},"operation":{"const":"placement.settle"},"result":{"type":"object","properties":{"ok":{"const":true},"value":{"$ref":"#/$defs/placementReceipt"}},"required":["ok","value"],"additionalProperties":false}},"required":["kind","operation","result"],"additionalProperties":false}
     ]},
     "placementRequest": {

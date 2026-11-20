@@ -36,7 +36,7 @@ internal class CallBinding(
             }
         }
         val result = CallRuntime.start(Configuration(Budgets(), OutgoingMedia.WHEN_PROVIDED, ConnectionAuthority.APPLICATION,
-            1, false), scope, system, this@CallBinding, registration.media ?: DefaultMedia, presentation, clock)
+            1, false), scope, system, this@CallBinding, registration.media ?: ApplicationMedia(telecom.audio), presentation, clock)
         val calls = (result as Outcome.Success).value
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             calls.observe().collect { observation ->
@@ -48,6 +48,7 @@ internal class CallBinding(
                 }
             }
         }
+        state.updateAudio(telecom.audio != null)
         runtime = calls
         registration.observers.forEach { it(calls) }
         calls to telecom
@@ -95,6 +96,8 @@ internal class CallBinding(
         return result
     }
 
+    suspend fun audioRoutes() = ready.await().second.audio?.routes
+
     suspend fun notificationAction(id: CallID, answer: Boolean): Boolean {
         val (calls, telecom) = ready.await()
         if (answer) return telecom.notificationAnswer(id) is Outcome.Success
@@ -108,24 +111,26 @@ internal class CallBinding(
             return failed(CallError.SystemFailed(SystemFailure(Platform.ANDROID, SystemOperation.ADMISSION)))
         }
         return when (operation) {
+            "audio.routes" -> telecom.audio?.let { ok(it.routes.value.bridgeValue()) }
+                ?: failed(CallError.Unsupported(Feature.AUDIO_ROUTES))
+            "audio.select" -> telecom.audio?.selectRoute(input.text("id"))?.reply { JsonNull }
+                ?: failed(CallError.Unsupported(Feature.AUDIO_ROUTES))
             "perform" -> {
                 val id = input.read<CallID>("id")
-                when (input.obj("action").text("kind")) {
-                    "answer" -> telecom.answer(id).reply { receipt ->
-                        message("performed", "receipt" to encode(receipt), "cursor" to settledCursor(calls))
-                    }
+                val action = input.obj("action")
+                when (action.text("kind")) {
+                    "answer" -> performed(calls, telecom.answer(id))
                     "end" -> end(calls, id)
                     "hold" -> failed(CallError.Unsupported(Feature.HOLD))
                     "join" -> failed(CallError.Unsupported(Feature.PREVIEW))
                     "video" -> failed(CallError.Unsupported(Feature.VIDEO))
-                    "tones" -> failed(CallError.Unsupported(Feature.TONES))
+                    "mute", "tones" -> performAudio(calls, telecom,
+                        Wire.json.decodeFromJsonElement<Action>(JsonObject(action + ("callID" to encode(id)))))
                     else -> failed(CallError.BridgeUnavailable)
                 }
             }
-            "receive" -> when (val event = Wire.json.decodeFromJsonElement<RemoteEvent>(input)) {
-                is RemoteEvent.Connected -> failed(CallError.BridgeUnavailable)
-                else -> calls.receive(event).reply { settledCursor(calls); message(encode(it).jsonPrimitive.content) }
-            }
+            "receive" -> calls.receive(Wire.json.decodeFromJsonElement<RemoteEvent>(input))
+                .reply { settledCursor(calls); message(encode(it).jsonPrimitive.content) }
             "bindRemote" -> calls.bindRemote(input.read("id"), input.read("remoteID")).reply { settledCursor(calls); JsonNull }
             "reportIncoming" -> {
                 if (line == null || input.read<CallingLine>("line") != line) {
@@ -137,6 +142,12 @@ internal class CallBinding(
             else -> error("Unknown bridge operation")
         }
     }
+
+    private suspend fun performed(calls: CallRuntime, result: Outcome<ActionReceipt, CallError>): Reply =
+        result.reply { message("performed", "receipt" to encode(it), "cursor" to settledCursor(calls)) }
+
+    private suspend fun performAudio(calls: CallRuntime, telecom: CallSystem, action: Action): Reply =
+        performed(calls, telecom.audio?.perform(action) ?: Outcome.Failure(CallError.BridgeUnavailable))
 
     private suspend fun end(calls: CallRuntime, id: CallID): Reply {
         val actionID = ActionID(UUID.randomUUID().toString())
@@ -164,6 +175,7 @@ internal data class CallSystem(
     val port: SystemPort,
     val answer: suspend (CallID) -> Outcome<ActionReceipt, CallError>,
     val notificationAnswer: suspend (CallID) -> Outcome<ActionReceipt, CallError> = answer,
+    val audio: CallAudio? = null,
 )
 
 private fun incoming(result: IncomingResult): JsonObject {
@@ -179,12 +191,6 @@ private fun incoming(result: IncomingResult): JsonObject {
             IncomingRefusal.Expired, IncomingRefusal.EventAlreadyUsed -> message("hidden", id)
         }
     }
-}
-
-private object DefaultMedia : MediaPort {
-    override suspend fun prepare(request: Effect.PrepareMedia) = Outcome.Success(Unit)
-    override suspend fun close(request: Effect.CloseMedia) = Unit
-    override suspend fun sendTones(request: Effect.SendTones) = Outcome.Failure(CallError.Unsupported(Feature.TONES))
 }
 
 internal typealias Reply = Outcome<JsonElement, CallError>
