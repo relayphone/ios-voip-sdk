@@ -12,14 +12,14 @@ export function createMarker(id: string): MediaMarker {
   for (let shift = 0; shift < 16; shift += 2) frequencies.push(tones[(hash >>> shift) & 3]!);
   return Object.freeze({ id, profile: "tones-v2", slotMs: 60, frequencies: Object.freeze(frequencies) });
 }
-function validMarker(marker: MediaMarker): void {
+function validMarker(marker: MediaMarker) {
   const expected = createMarker(marker.id);
   if (marker.profile !== expected.profile || marker.slotMs !== expected.slotMs ||
       marker.frequencies.length !== expected.frequencies.length ||
       marker.frequencies.some((tone, i) => tone !== expected.frequencies[i]))
     throw new MediaTestError("invalid_arguments", "Marker must use the tones-v2 profile");
 }
-function validRate(rate: number): void {
+function validRate(rate: number) {
   if (!Number.isSafeInteger(rate) || rate < 8000 || rate > 96000 || rate % 50 !== 0)
     throw new MediaTestError("invalid_arguments", "Sample rate must support exact 20 ms slots");
 }
@@ -70,7 +70,7 @@ export function emissionSamples(marker: MediaMarker, sampleRate: number, count: 
   return pcm;
 }
 
-function toneConfidence(pcm: Float32Array, start: number, count: number, frequency: number, rate: number): number {
+function toneConfidence(pcm: Float32Array, start: number, count: number, frequency: number, rate: number) {
   const coefficient = 2 * Math.cos(2 * Math.PI * frequency / rate);
   let previous = 0, beforePrevious = 0, energy = 0;
   for (let i = start; i < start + count; i++) {
@@ -92,7 +92,7 @@ export function detectMarker(pcm: Float32Array, sampleRate: number, marker: Medi
 function slotScorer(pcm: Float32Array, sampleRate: number) {
   const count = sampleRate / 50;
   const cache = new Map<number, Float64Array>();
-  return (millisecond: number, frequency: number): number => {
+  return (millisecond: number, frequency: number) => {
     const start = Math.floor(millisecond * sampleRate / 1000);
     if (start < 0 || start + count * 3 > pcm.length) return -1;
     let values = cache.get(frequency);
