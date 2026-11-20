@@ -31,7 +31,7 @@ export class MediaPeer {
   private room = new Room();
   private videoPeer?: VideoPeer;
   private videoOpening = false;
-  private source = new AudioSource(48_000, 1, 100);
+  private readonly source: AudioSource;
   private audioPublication?: string;
   private running = true;
   private emission: Int16Array | undefined;
@@ -58,7 +58,8 @@ export class MediaPeer {
   private readonly captureLimitSamples: number;
   private readonly lifecycle = new PeerLifecycle();
 
-  constructor(readStatistics: typeof receiverStatistics = receiverStatistics, captureSeconds: 3 | 4 = 3) {
+  constructor(readStatistics: typeof receiverStatistics = receiverStatistics, captureSeconds: 3 | 4 = 3, audioQueueMs = 100) {
+    this.source = new AudioSource(48_000, 1, audioQueueMs);
     this.readStatistics = readStatistics;
     this.captureLimitSamples = captureSeconds * 48_000;
     this.reconnectControl = new PeerReconnect({
@@ -198,10 +199,11 @@ export class MediaPeer {
     return { retired, publication };
   }
 
-  publish(markerId: string, observePacing = false): void {
+  publish(markerId: string, observePacing = false, keepQueuedAudio = false): void {
     if (!this.status().connected || this.publicationFailed) throw Error('Peer is unavailable');
     this.emission = Int16Array.from(emissionSamples(createMarker(markerId), 48_000, 48_000 / 50 * 51), value => Math.round(value * 32767));
-    this.cursor = 0; this.source.clearQueue();
+    this.cursor = 0;
+    if (!keepQueuedAudio) this.source.clearQueue();
     this.senderPacing = observePacing && this.audioPublication ? {
       markerId, publication: this.audioPublication, startedAtMs: performance.now(), frames: [], rtp: [], droppedFrames: 0, droppedRtpRows: 0,
     } : undefined;
