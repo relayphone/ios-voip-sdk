@@ -30,6 +30,14 @@ function verifyExample(apk: string): void {
   throw new Error('The Expo example did not report the calling journeys');
 }
 
+function verifyPush(apk: string): void {
+  adb(['install', '-r', apk], 45_000);
+  const result = adb(['shell', 'am', 'instrument', '-w',
+    'com.example.voipconversations.test/androidx.test.runner.AndroidJUnitRunner'], 150_000);
+  console.log(result);
+  if (!/^OK \(1 test\)$/mu.test(result)) throw new Error('Expo push instrumentation failed');
+}
+
 export async function verifyOnEmulator(
   start: (attempt: number) => Emulator,
   verify: () => void,
@@ -153,6 +161,7 @@ if (import.meta.main) {
           '-Pandroid.enableAdditionalTestOutput=true', '--no-daemon', '--max-workers=2', '--console=plain',
         ], { stdio: 'inherit', env: { ...process.env, ANDROID_SERIAL: serial } });
         if (process.env.EXPO_CALL_JOURNEY_APK) verifyExample(process.env.EXPO_CALL_JOURNEY_APK);
+        if (process.env.EXPO_PUSH_TEST_APK) verifyPush(process.env.EXPO_PUSH_TEST_APK);
       } catch (error) {
         console.error('::error title=Product verification::Android instrumentation failed. See the Gradle log and test artifacts.');
         throw error;

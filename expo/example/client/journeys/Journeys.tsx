@@ -9,9 +9,37 @@ import { driveJourney, type JourneyEvents } from './drive';
 export function Journeys() {
   const events = useRef<JourneyEvents>({ actions: [], outcomes: [], elsewhere: [] });
   const started = useRef(false);
-  calls.useConversationEvent('actionPerformed', event => events.current.actions.push({
-    id: event.conversationId, kind: event.action.kind, origin: event.origin,
-  }));
+  const conversations = calls.useConversations();
+  const token = calls.usePushToken();
+  const sawRotation = useRef(false);
+  useEffect(() => {
+    if (Platform.OS === 'android' && token?.type === 'fcm' && token.value === 'expo-example-fcm-initial') {
+      console.info('VoIPPushExample token read initial');
+    }
+  }, [token]);
+  calls.useConversationEvent('pushTokenUpdated', value => {
+    if (Platform.OS !== 'android') return;
+    if (value?.type === 'fcm' && value.value === 'expo-example-fcm-rotated') {
+      sawRotation.current = true;
+      console.info('VoIPPushExample token event rotated');
+    } else if (value === null && sawRotation.current) {
+      sawRotation.current = false;
+      console.info('VoIPPushExample token event invalidated');
+    }
+  });
+  calls.useConversationEvent('actionPerformed', event => {
+    const { conversationId: id, action, origin } = event;
+    events.current.actions.push({ id, kind: action.kind, origin });
+    if (Platform.OS === 'android' && id.startsWith('fcm-test-')) {
+      console.info(`VoIPPushExample ${id} ${action.kind} ${origin}`);
+    }
+  });
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    for (const call of conversations) {
+      if (call.id.startsWith('fcm-test-')) console.info(`VoIPPushExample ${call.id} ${call.status}`);
+    }
+  }, [conversations]);
   calls.useConversationEvent('answeredElsewhere', event => events.current.elsewhere.push(event));
   calls.useConversationEvent('incomingConversationOutcome', event => {
     const preview = event.outcome.status === 'previewed' ? event.outcome.reason : undefined;
@@ -41,6 +69,7 @@ export function Journeys() {
     const listener = Linking.addEventListener('url', event => open(event.url));
     void Linking.getInitialURL().then(open);
     new File(Paths.document, 'javascript-journeys-ready.json').write('{"ready":true}');
+    if (Platform.OS === 'android') console.info('VoIPPushExample ready');
     return () => listener.remove();
   }, []);
   return null;

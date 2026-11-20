@@ -1,0 +1,8 @@
+android {
+  testBuildType "release"
+  defaultConfig { testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner" }
+}
+
+dependencies {
+  androidTestImplementation "androidx.test:runner:1.7.0"
+}

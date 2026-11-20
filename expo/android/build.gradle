@@ -27,7 +27,6 @@ android {
   sourceSets.main {
     java.srcDir 'src/bridge/kotlin'
     java.srcDirs += ['core', 'runtime', 'system'].collect { new File(sdk, "${it}/src/main/kotlin") }
-    manifest.srcFile new File(sdk, 'system/src/main/AndroidManifest.xml')
     res.srcDirs += new File(sdk, 'system/src/main/res')
     resources.srcDirs += wireSchemas.map { it.destinationDir.parentFile }
   }
@@ -37,6 +36,7 @@ tasks.named('preBuild').configure { dependsOn wireSchemas }
 kotlin.compilerOptions.optIn.add('kotlin.time.ExperimentalTime')
 
 dependencies {
+  api 'com.google.firebase:firebase-messaging:25.0.1'
   implementation 'androidx.core:core-telecom:1.1.0'
   implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
   implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0'

@@ -138,6 +138,8 @@ private class Reduction(
 
     private fun incoming(input: Input.Incoming): CommandReceipt.Incoming {
         fun resolved(result: IncomingResult) = CommandReceipt.Incoming.Resolved(result)
+        if (input.ringDeadline?.let { now >= it } == true)
+            return resolved(IncomingResult.Refused(input.callID, IncomingRefusal.Expired))
         val seen = events[input.eventID]
         seen?.incoming?.let { return resolved(IncomingResult.Duplicate(it)) }
         val original = records.values.firstOrNull { it.invitationEvent == input.eventID }
@@ -160,7 +162,8 @@ private class Reduction(
         val attempt = attempt(input.callID)
         val record = Record(
             createCall(input.callID, input.line, listOf(input.party), Direction.INCOMING, Lifecycle.Reporting),
-            admission = attempt, invitationEvent = input.eventID, invitationDeadline = remaining?.let { now + it },
+            admission = attempt, invitationEvent = input.eventID,
+            invitationDeadline = input.ringDeadline ?: remaining?.let { now + it },
         )
         put(record)
         drain(input.callID, EndTarget.Canonical(input.callID))

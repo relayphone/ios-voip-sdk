@@ -54,6 +54,14 @@ const attempt: ModelV1 = { version: 1, kind: 'mediaState', value: { callID, owne
 const endpoint: ModelV1 = { version: 1, kind: 'audioRoute', value: { callID, intent: route.intent, observed: { kind: 'active' } } };
 // @ts-expect-error Every push requires an expiry.
 const expiry: ModelV1 = { version: 1, kind: 'pushEnvelope', value: { invitation, issuedAt: push.issuedAt } };
+// @ts-expect-error The push envelope is version one.
+const pushVersion: ModelV1 = { version: 2, kind: 'pushEnvelope', value: { invitation, issuedAt: push.issuedAt, expiresAt: push.expiresAt } };
+const pushCalendar = { version: 1, kind: 'pushEnvelope', value: {
+  invitation, issuedAt: '2026-11-31T00:00:00.000Z', expiresAt: '2026-12-01T00:00:45.000Z',
+} } satisfies ModelV1;
+const pushInterval = { version: 1, kind: 'pushEnvelope', value: {
+  invitation, issuedAt: push.expiresAt, expiresAt: push.expiresAt,
+} } satisfies ModelV1;
 // @ts-expect-error Invalidation cannot carry an upload acknowledgement.
 const invalidation: ModelV1 = { version: 1, kind: 'pushRegistration', value: { kind: 'invalidated', installationID: registration.installationID, channel: 'fcm', generation: 3, upload: { kind: 'acknowledged' } } };
 // @ts-expect-error Observed delivery requires evidence.
@@ -62,4 +70,5 @@ const evidence: ModelV1 = { version: 1, kind: 'pushHealth', value: { ...health, 
 const blocker: ModelV1 = { version: 1, kind: 'capability', value: { feature: 'tones', availability: { kind: 'unavailable' } } };
 // @ts-expect-error A start boundary cannot report success.
 const outcome: ModelV1 = { version: 1, kind: 'timing', value: { ...timing, boundary: 'started', outcome: 'succeeded' } };
-export const invalidV1 = { tap, refusal, attempt, endpoint, expiry, invalidation, evidence, blocker, outcome };
+export const invalidV1 = { tap, refusal, attempt, endpoint, expiry, pushVersion, pushCalendar, pushInterval,
+  invalidation, evidence, blocker, outcome };

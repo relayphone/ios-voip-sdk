@@ -1,6 +1,7 @@
 package com.relayphone.voip.expo
 
 import com.relayphone.voip.Effect
+import com.relayphone.voip.CallID
 import com.relayphone.voip.runtime.AnswerDecision
 import com.relayphone.voip.runtime.CallRuntime
 import com.relayphone.voip.runtime.MediaPort
@@ -21,6 +22,16 @@ object NativeCallMedia {
 
     private var started = false
     private var registration = Registration(null, emptyList(), null)
+    private val credentials = mutableMapOf<CallID, String>()
+
+    /** The opaque lookup reference supplied by an admitted native push. */
+    @Synchronized
+    fun credentialReference(callID: CallID): String? = credentials[callID]
+
+    @Synchronized
+    internal fun recordCredential(callID: CallID, ref: String?) {
+        if (ref == null) credentials.remove(callID) else credentials[callID] = ref
+    }
 
     /** Call from the host's Expo application lifecycle listener. Observers attach once per runtime. */
     @Synchronized

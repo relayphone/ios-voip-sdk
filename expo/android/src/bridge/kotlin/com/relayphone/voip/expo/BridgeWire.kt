@@ -25,6 +25,12 @@ internal object BridgeWire {
         return JsonPrimitive(1) in versions
     }
 
+    fun pushEnvelope(value: JsonObject): JsonObject {
+        val root = documents.values.last()
+        require(matches(value, root, root)) { "Invalid push envelope" }
+        return value.obj("value")
+    }
+
     private fun matches(value: JsonElement, rule: JsonObject, root: JsonObject): Boolean {
         rule["\$ref"]?.jsonPrimitive?.content?.let { reference ->
             val (document, key) = reference.split("#/\$defs/", limit = 2)
