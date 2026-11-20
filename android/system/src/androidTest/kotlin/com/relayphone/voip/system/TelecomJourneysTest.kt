@@ -3,6 +3,7 @@ package com.relayphone.voip.system
 import android.Manifest
 import android.app.NotificationManager
 import android.content.Context
+import android.media.AudioManager
 import android.os.ParcelFileDescriptor
 import android.os.ParcelUuid
 import android.os.SystemClock
@@ -109,7 +110,9 @@ class TelecomJourneysTest {
             withContext(Dispatchers.IO) {
                 val calls = CallsManager(context)
                 calls.registerAppWithTelecom(CallsManager.CAPABILITY_BASELINE, compatibilityBound)
-                val backend = CoreTelecomBackend(calls, AdmissionNotification(context))
+                val backend = CoreTelecomBackend(
+                    calls, context.getSystemService(AudioManager::class.java), AdmissionNotification(context),
+                )
                 TelecomPort(EchoAnswer(backend, nativeAnswers), submit)
             }
         }) { runtime, system, authority ->
