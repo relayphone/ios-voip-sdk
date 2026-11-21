@@ -11,8 +11,8 @@ import { createMarker } from '../../expo/src/testing/marker.ts';
 import { markerReport, measureMarker, type PCMCapture } from './marker-evidence.ts';
 import { command, deadline } from './fixture-runtime.ts';
 import { measureMarkerAsync } from './measure-marker.ts';
-import { monitorReceiver, ReceiverObservationError, type ReceiverWindow } from './peer-window.ts';
-import { observeSilence, SilenceObservationError, type SilenceWindow } from './silence-window.ts';
+import type { ReceiverObservationError, ReceiverWindow } from './peer-window.ts';
+import { SilenceObservationError, type SilenceWindow } from './silence-window.ts';
 import { assertNativePassed, assertNativeTeardown, writeUnobservedResult } from './result-receipt.ts';
 import { diagnoseNativeStartup } from './startup-diagnostics.ts';
 
@@ -24,8 +24,7 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
   const processing = "synthetic";
   assert.ok(requestedSimulator && app && output, 'Usage: feasibility.ts <simulator|lease> <app> <result>');
   const simulator = leasedSimulator ?? requestedSimulator;
-  const { startHarness } = await import('./harness.ts');
-  const { dispose } = await import('@livekit/rtc-node');
+  const { startIsolatedHarness } = await import('./harness.ts');
   // Report only phase names and timing, never command arguments, tokens or server config.
   const fixtureStarted = performance.now();
   async function phase<T>(name: string, operation: () => Promise<T>): Promise<T> {
@@ -53,7 +52,7 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
   await simctl('privacy', simulator, 'grant', 'microphone', bundle);
   const container = await simctl('get_app_container', simulator, bundle, 'data');
   const harnessDirectory = output + '.harness';
-  const harness = await phase('harness.ready', () => startHarness(harnessDirectory, fixtureId));
+  const harness = await phase('harness.ready', () => startIsolatedHarness(harnessDirectory, fixtureId));
   const hardStop = () => {
     process.exitCode = 124;
     watchdogAbort.abort(new Error('Media feasibility exceeded its run deadline'));
@@ -66,9 +65,9 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
   let resultDeadlineMs: number | undefined;
   const resultPhase = Promise.withResolvers<void>();
   let pendingSilence: Promise<SilenceWindow[]> | undefined;
-  let pendingReceiver: Promise<ReceiverWindow[]> | undefined;
-  type ControlStep = 'request' | 'drain' | 'window-1' | 'window-2' | 'window-3' | 'marker-analysis' | 'marker-gate' | 'silence-gate';
-  type PeerObservation = ReturnType<typeof harness.observation>;
+  let pendingReceiver: ReturnType<typeof harness.receiverWindows> | undefined;
+  type ControlStep = 'request' | 'drain' | 'receiver-windows' | 'window-1' | 'window-2' | 'window-3' | 'marker-analysis' | 'marker-gate' | 'silence-gate';
+  type PeerObservation = Awaited<ReturnType<typeof harness.observation>>;
   const controls: { leakControlCaught: boolean; publicationSilent: boolean;
     silenceWindows?: SilenceWindow[];
     receiverWindows: { phase: ControlStep; window: ReceiverWindow }[];
@@ -101,42 +100,33 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
       await step('drain', () => delay(500));
       const startedAtMs = performance.now();
       await harness.act({ type: 'capture' });
-      const observe = async () => {
-        const retain = (windows: ReceiverWindow[]) => controls.receiverWindows.push(
-          ...windows.map(window => ({ phase: controlPhase, window })));
-        pendingReceiver = monitorReceiver(() => harness.status(), { deadlineMs: resultDeadlineMs! });
-        try { retain(await pendingReceiver); }
-        catch (error) {
-          if (error instanceof ReceiverObservationError) {
-            retain(error.windows);
-            controls.failure = { phase: controlPhase, reason: error.reason, health: error.health, gapMs: error.gapMs };
-          }
-          throw error;
-        }
-      };
       if (request.url === '/leak-control') {
-        await step('window-1', observe);
-        // Three seconds cover an arbitrary emission phase, allowed drift and the complete post-roll.
-        for (const window of ['window-2', 'window-3'] as const) {
-          await step(window, observe);
-        }
-        uplinkCapture = harness.observation().capture;
+        // Three seconds cover an arbitrary emission phase, allowed drift and the full post-roll.
+        // Run all three windows in the peer process so coordinator pauses cannot interleave them.
+        await step('receiver-windows', async () => {
+          pendingReceiver = harness.receiverWindows(resultDeadlineMs!);
+          const { windows, failure } = await pendingReceiver;
+          controls.receiverWindows.push(...windows);
+          if (failure) {
+            controls.failure = failure;
+            throw Error(`Far-end observer: ${failure.reason}`);
+          }
+        });
+        uplinkCapture = (await harness.observation()).capture;
         uplinkEvidence = await step('marker-analysis', () => measureMarkerAsync(uplinkCapture!, uplink, 'host-poll'));
         controlPhase = 'marker-gate';
         assert.ok(uplinkEvidence.clean && uplinkEvidence.complete && uplinkEvidence.postRollObserved, 'Complete unmuted tones-v2 marker and post-roll were not received');
         controls.leakControlCaught = true;
       } else {
         controlPhase = 'silence-gate';
-        const trackSid = harness.status().activeTrackSid;
-        pendingSilence = step('silence-gate', () => observeSilence(() => {
-          const state = harness.status();
-          return { ...state, samples: state.receivedSamples };
-        }, { durationMs: 1000, deadlineMs: resultDeadlineMs!, gapLimitMs: 250 }));
+        const trackSid = (await harness.status()).activeTrackSid;
+        pendingSilence = step('silence-gate', () => harness.silence(
+          { durationMs: 1000, deadlineMs: resultDeadlineMs!, gapLimitMs: 250 }));
         try {
           controls.silenceWindows = await pendingSilence;
           controls.publicationSilent = true;
         } finally {
-          const { capture, lifecycle: { afterDisconnect: _, ...lifecycle } } = harness.observation();
+          const { capture, lifecycle: { afterDisconnect: _, ...lifecycle } } = await harness.observation();
           const trackMuteEvent = trackSid === undefined ? null : lifecycle.events.findLast(event =>
             event.kind === 'trackMuted' && event.identity === appParticipant && event.trackSid === trackSid) ?? null;
           // The peer retains at most three seconds of mono PCM per capture.
@@ -147,8 +137,7 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
       response.end('ok');
     } catch (error) {
       if (error instanceof SilenceObservationError) controls.silenceWindows = error.windows;
-      controls.failure = { phase: controlPhase, reason: error instanceof SilenceObservationError ? error.reason : error instanceof ReceiverObservationError ? error.reason : 'control-failed',
-        ...(error instanceof ReceiverObservationError ? { health: error.health, gapMs: error.gapMs } : {}) };
+      controls.failure ??= { phase: controlPhase, reason: error instanceof SilenceObservationError ? error.reason : 'control-failed' };
       console.log(JSON.stringify({ kind: 'control-failure', ...controls.failure }));
       response.statusCode = 500; response.end('failed');
     }
@@ -200,7 +189,7 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
       assertNativePassed(evidence);
       assertNativeTeardown((evidence as { teardown?: unknown }).teardown);
     } catch (error) { nativeFailure = error; }
-    uplinkCapture ??= harness.observation().capture;
+    uplinkCapture ??= (await harness.observation()).capture;
     if (!nativeFailure) uplinkEvidence ??= await measureMarkerAsync(uplinkCapture, uplink, 'host-poll');
     const downlinkCaptures: Partial<Record<"decoded" | "output", PCMCapture>> = {};
     const downlinkEvidence = Object.fromEntries(await Promise.all((['decoded', 'output'] as const).map(async (stage): Promise<[string, ReturnType<typeof measureMarker> | { complete: false; error: string } | null]> => {
@@ -214,7 +203,7 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
     })));
     writeFileSync(output, JSON.stringify({ processing, native: evidence, startupDiagnostics: diagnoseNativeStartup(evidence), farEnd: controls,
       pcm: { fromDevice: uplinkCapture, toDevice: downlinkCaptures },
-      receiver: harness.status(),
+      receiver: await harness.status(),
       markers: { fromDevice: uplinkEvidence, toDevice: downlinkEvidence } }, null, 2));
     console.log(JSON.stringify({ processing, markers: { fromDevice: uplinkEvidence, toDevice: downlinkEvidence } }));
     if (process.env.GITHUB_STEP_SUMMARY) {
@@ -236,7 +225,7 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
     // An interrupted launch may still have been completing during the first termination request.
     await terminate();
     try {
-      await deadline(25_000, 'Harness cleanup', async () => { await harness.stop(); await dispose(); });
+      await deadline(25_000, 'Harness cleanup', harness.stop);
       signal.throwIfAborted();
     } catch (error) { harness.abort(); throw error; }
     finally {

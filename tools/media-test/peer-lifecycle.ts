@@ -39,6 +39,10 @@ export class PeerLifecycle {
     for (const sample of samples.subarray(0, remaining)) this.terminal.samples.push(sample / 32768);
     this.terminal.overflowSamples += Math.max(0, samples.length - remaining);
   }
+  audioGate(identity: string, trackSid: string, afterMs: number) {
+    return this.events.findLast(event => event.identity === identity && event.trackSid === trackSid &&
+      event.atMs >= afterMs && (event.kind === 'trackMuted' || event.kind === 'trackUnmuted'));
+  }
   snapshot() {
     return { clock: { ...this.clock }, observedAtMs: this.now(), droppedEvents: this.dropped,
       receivedSamples: this.receivedSamples, events: this.events.map(row => ({ ...row })),

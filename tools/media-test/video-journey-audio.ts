@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createMarker, detectMarker } from '../../expo/src/testing/marker.ts';
 import type { MediaMarker } from '../../expo/src/testing/types.ts';
-import type { MediaHarness } from './harness.ts';
+import type { IsolatedHarness } from './harness.ts';
 import type { PCMCapture } from './marker-evidence.ts';
 import { measureMarkerAsync } from './measure-marker.ts';
 import type { NativeJourneyReply } from './native-journey.ts';
@@ -38,20 +38,22 @@ export function readJourneyAudio(reply: NativeJourneyReply): JourneyAudio {
   return audio;
 }
 
-export function hasUplinkSamples(host: ReturnType<MediaHarness['status']>) {
+type HostStatus = Awaited<ReturnType<IsolatedHarness['status']>>;
+
+export function hasUplinkSamples(host: HostStatus) {
   return host.connected && host.readerLive && host.trackAvailable && !host.publicationFailed &&
     host.receivedSamples >= 48_000 * 3;
 }
 
-export function hasDuplexSamples(audio: JourneyAudio, host: ReturnType<MediaHarness['status']>) {
+export function hasDuplexSamples(audio: JourneyAudio, host: HostStatus) {
   return audio.audioActive && hasUplinkSamples(host) && [audio.decoded, audio.output].every(s =>
       s.observation.installed && s.sampleRate > 0 && s.retainedSamples >= s.sampleRate * journeyCaptureSeconds &&
       s.transportCount >= 2 && s.lastTransportSample >= s.sampleRate * journeyCaptureSeconds);
 }
 
-export async function assertDuplexAudio(audio: JourneyAudio, harness: MediaHarness, markers: { up: MediaMarker; down: MediaMarker }) {
+export async function assertDuplexAudio(audio: JourneyAudio, harness: IsolatedHarness, markers: { up: MediaMarker; down: MediaMarker }) {
   assert.ok(audio.decoded.pcm && audio.output.pcm, 'Missing native PCM from the requested audio snapshot');
-  const host = harness.observation();
+  const host = await harness.observation();
   const [up, decoded, output] = await Promise.all([
     measureMarkerAsync(host.capture, markers.up, 'host-poll'),
     measureMarkerAsync(audio.decoded.pcm, markers.down),
@@ -101,8 +103,8 @@ export function readAudioRoute(audio: JourneyAudio, video: boolean) {
   return audio.outputPorts;
 }
 
-export function assertLocalAudioDeparture(harness: MediaHarness, armedAtMs: number, phaseIds: readonly string[]) {
-  const { receiver, lifecycle } = harness.observation();
+export async function assertLocalAudioDeparture(harness: IsolatedHarness, armedAtMs: number, phaseIds: readonly string[]) {
+  const { receiver, lifecycle } = await harness.observation();
   const after = lifecycle.afterDisconnect;
   assert.ok(receiver.connected && lifecycle.droppedEvents === 0 && after?.identity === 'example' &&
     after.startedAtMs >= armedAtMs && after.overflowSamples === 0, 'Incomplete far-end audio departure');

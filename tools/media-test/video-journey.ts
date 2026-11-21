@@ -6,26 +6,26 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { ConversationId } from '../../expo/src/conversations/types.ts';
 import { createMarker } from '../../expo/src/testing/marker.ts';
 import { command, deadline } from './fixture-runtime.ts';
-import type { MediaHarness } from './harness.ts';
+import type { IsolatedHarness } from './harness.ts';
 import { prepareNativeJourney, type NativeJourneyBudget } from './native-journey.ts';
 import { sampleNativeVideoClock } from './native-synthetic-video.ts';
 import { NativeJourneyFailure, type NativeVideoEvent } from './native-video-evidence.ts';
 import { assertNativeTeardown } from './result-receipt.ts';
-import { observeSilence, SilenceObservationError } from './silence-window.ts';
+import { SilenceObservationError } from './silence-window.ts';
 import { withSimulatorMediaAudio } from './simulator-media.ts';
 import { diagnoseNativeStartup } from './startup-diagnostics.ts';
 import { assertDuplexAudio, assertLocalAudioDeparture, hasDuplexSamples, hasUplinkSamples, heldAudioDrainMs, heldOutputReceipt, journeyAudioQueueMs, journeyCaptureSeconds, readAudioRoute, readJourneyAudio } from './video-journey-audio.ts';
 import { appParticipant, assertRemoteProducer, assessJourneyVideo, readVideoSnapshot, remoteUplinkCoverage, type VideoSnapshot } from './video-journey-evidence.ts';
 import { hostVideoBoundary, videoGates, type VideoSourceReceipt } from './video-observation.ts';
-import type { VideoPeer } from './video-peer.ts';
 
 const cases = ['initial-local', 'app-downgrade', 'server-remote', 'hold-resume'] as const;
 type JourneyCase = typeof cases[number];
 type Boundary = { event: NativeVideoEvent; sample: VideoSnapshot };
+type VideoPeer = Awaited<ReturnType<IsolatedHarness['openVideo']>>;
 type Epoch = { enable: Boundary; number: number; peer: VideoPeer };
 type Report = { scenario: JourneyCase; verdict: 'failed' | 'passed'; checkpoints: { phase: string; evidence: unknown }[] };
 
-async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prepareNativeJourney>, input: {
+async function runJourney(harness: IsolatedHarness, mailbox: ReturnType<typeof prepareNativeJourney>, input: {
   scenario: JourneyCase; conversationId: string; clockID: string; initialPeer: VideoPeer; report: Report; budget: NativeJourneyBudget;
 }) {
   const { scenario, conversationId, clockID, initialPeer, report, budget } = input;
@@ -80,13 +80,13 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
     const phaseReceivedAtMs = performance.now();
     // Arm both captures before sending the new marker on the continuously paced track.
     await harness.act({ type: 'publish', markerId: downId, observePacing: true, keepQueuedAudio: true });
-    const capture = { host: harness.status(), native: readJourneyAudio(phase) };
+    const capture = { host: await harness.status(), native: readJourneyAudio(phase) };
     try {
       if (expectedDownlink) {
         assert.equal(capture.native.remoteAudioPublication, expectedDownlink, 'Resumed capture began on a different downlink');
       }
       await until(`${label} duplex samples with RTP coverage`, async () => {
-        capture.host = harness.status();
+        capture.host = await harness.status();
         if (!hasUplinkSamples(capture.host)) return;
         capture.native = readJourneyAudio(await request({ operation: 'audioProgress' }));
         return hasDuplexSamples(capture.native, capture.host) ? true : undefined;
@@ -94,12 +94,12 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
       const snapshotRequestedAtMs = performance.now();
       const snapshot = await request({ operation: 'audioSnapshot' });
       const pcm = readJourneyAudio(snapshot);
-      assert.ok(hasDuplexSamples(pcm, harness.status()), 'Duplex capture lost coverage between snapshots');
+      assert.ok(hasDuplexSamples(pcm, await harness.status()), 'Duplex capture lost coverage between snapshots');
       if (expectedDownlink) {
         assert.equal(pcm.remoteAudioPublication, expectedDownlink, 'Resumed PCM came from a different downlink');
       }
       const capturedAtMs = performance.now();
-      const downlink = { clockID, nativeClockID: snapshot.clockId, sender: harness.downlinkPacing(),
+      const downlink = { clockID, nativeClockID: snapshot.clockId, sender: await harness.downlinkPacing(),
         phase: { sentAtMs: phaseSentAtMs, receivedAtMs: phaseReceivedAtMs, nativeAtMs: phase.phaseAtMs },
         capture: { sentAtMs: snapshotRequestedAtMs, receivedAtMs: capturedAtMs, nativeAtMs: snapshot.observedAtMs },
         decoded: { callbacks: pcm.decoded.observation, rtp: pcm.decoded.pcm?.transport },
@@ -112,7 +112,7 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
       }
       deadlineCheck();
     } catch (error) {
-      keep(`${label}-capture`, { phaseId, startedAtMs, observedAtMs: performance.now(), sender: harness.downlinkPacing(), ...capture });
+      keep(`${label}-capture`, { phaseId, startedAtMs, observedAtMs: performance.now(), sender: await harness.downlinkPacing(), ...capture });
       throw error;
     }
   }
@@ -121,8 +121,8 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
     deadlineCheck();
     return { enable, peer, number };
   }
-  function measure(state: VideoSnapshot, epoch: Epoch, terminal?: Parameters<typeof assessJourneyVideo>[5]) {
-    const up = epoch.peer.observation(), down = epoch.peer.sourceReceipt();
+  function measure(state: VideoSnapshot, epoch: Epoch, { up, down }: Awaited<ReturnType<VideoPeer['snapshot']>>,
+    terminal?: Parameters<typeof assessJourneyVideo>[5]) {
     const nativeEpoch = state.media.epochs.find(e => e.epoch === epoch.number);
     if (!up || up.startedAtMs > state.bracket.sentMs || !down.publication || !nativeEpoch?.publication ||
         !state.media.receivers.some(r => r.publication === down.publication)) return;
@@ -135,12 +135,13 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
       const startedAtMs = performance.now();
       const state = await sample();
       const sampledAtMs = performance.now();
-      const receipts = measure(state, epoch, terminal);
+      const hostVideo = await epoch.peer.snapshot();
+      const receipts = measure(state, epoch, hostVideo, terminal);
       const previousPoll = priorPoll;
       const currentPoll = { startedAtMs, sampledAtMs, assessedAtMs: performance.now() };
       priorPoll = currentPoll;
       const preserve = () => keep(label, { sdk: state.sdk, native: state.media, bracket: state.bracket,
-        host: epoch.peer.observation(), farEndSource: epoch.peer.sourceReceipt(), receipts,
+        host: hostVideo.up, farEndSource: hostVideo.down, receipts,
         polling: { previous: previousPoll, current: currentPoll } });
       if (!receipts?.up || receipts.up.firstMs === null || receipts.down.firstMs === null) {
         if (performance.now() > firstDeadline) {
@@ -169,8 +170,9 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
     const remote = departedSource !== undefined;
     const coverage = hostVideoBoundary(end.event.atMs, end.sample.bracket).latest + videoGates.drainMs;
     await waitThrough(coverage);
-    const state = await sample(), downlink = departedSource ?? epoch.peer.sourceReceipt();
-    const host = remote ? undefined : epoch.peer.observation();
+    const state = await sample();
+    const { up: host, down: downlink } = departedSource
+      ? { down: departedSource, up: undefined } : await epoch.peer.snapshot();
     assert.ok(remote || host, 'Missing terminal uplink observation');
     const receipts = assessJourneyVideo(state, epoch.enable, epoch.number, downlink, host, terminal);
     keep('terminal-video', { sdk: state.sdk, native: state.media, host, downlink, receipts,
@@ -184,7 +186,7 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
     else {
       assert.equal(state.media.publicationMuted, true, 'Held app publication was not muted');
       assert.equal(state.sdk.onHold, true, 'SDK hold was not retained');
-      assert.ok(downlink.generated.at(-1)!.sourceTimeUs > (coverage - 300) * 1000 && epoch.peer.status().held,
+      assert.ok(downlink.generated.at(-1)!.sourceTimeUs > (coverage - 300) * 1000 && (await epoch.peer.status()).held,
         'Far-end generation did not continue behind the hold gate');
     }
     return state;
@@ -205,7 +207,7 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
     await freshAudio('before-upgrade');
     const audio = await sample();
     assert.ok(audio.media.publication === null && audio.media.remotePublications.length === 0 &&
-      audio.media.epochs.length === 0 && audio.media.receivers.length === 0 && !initialPeer.observation(), 'Audio call began with video');
+      audio.media.epochs.length === 0 && audio.media.receivers.length === 0 && !(await initialPeer.observation()), 'Audio call began with video');
     const source = scenario === 'app-downgrade' ? 'app' : 'server';
     if (source === 'app') await request({ operation: 'video', enabled: true, source });
     else {
@@ -237,7 +239,7 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
     assert.equal(same.media.publication, live.media.publication, 'Same-value update replaced the track');
     assert.equal(same.media.epochs.length, live.media.epochs.length, 'Same-value update started another epoch');
     const actionAtMs = performance.now();
-    epoch.peer.freeze();
+    await epoch.peer.freeze();
     await Promise.all([request({ operation: 'video', enabled: false, source: 'app' }), epoch.peer.stop()]);
     const off = await waitForEvent(same, 'changed', false, 'app');
     downgradedBoundary = { ...off, actionAtMs, operation: 'stop' };
@@ -245,53 +247,41 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
   } else if (scenario === 'hold-resume') {
     await freshAudio('before-hold');
     live = await freshVideo('before-hold-video', epoch);
-    const audioSid = harness.status().activeTrackSid;
+    const audioSid = (await harness.status()).activeTrackSid;
     assert.ok(audioSid, 'Missing live far-end audio subscription before hold');
     const actionAtMs = performance.now();
     await epoch.peer.hold();
-    await request({ operation: 'hold', enabled: true });
-    const hold = await waitForEvent(live, 'held', true);
-    const audioGate = () => harness.audioLifecycle().events.filter(e => e.identity === appParticipant &&
+    const audioGate = async () => (await harness.audioLifecycle()).events.filter(e => e.identity === appParticipant &&
       e.trackSid === audioSid && e.atMs >= actionAtMs && (e.kind === 'trackMuted' || e.kind === 'trackUnmuted')).at(-1);
-    const muted = await until('far-end held audio publication', () => {
-      const event = audioGate();
-      return event?.kind === 'trackMuted' ? event : undefined;
+    const holdCoverage = harness.heldSilence(appParticipant, audioSid, actionAtMs, heldAudioDrainMs,
+      { deadlineMs: budget.deadlineMs, durationMs: 1000, gapLimitMs: 250 }).then(evidence => {
+      if (evidence.reason) {
+        keep('held-far-end-audio', evidence);
+        throw new SilenceObservationError(evidence.reason, evidence.windows);
+      }
+      return evidence;
     });
-    const holdCoverage = (async () => {
-      // The mute notification can arrive ahead of pre-mute PCM in the receiver.
-      const drainThroughMs = muted.atMs + heldAudioDrainMs;
-      await waitThrough(drainThroughMs);
-      assert.deepEqual(audioGate(), muted, 'Held audio publication changed during drain');
-      assert.equal(harness.status().activeTrackSid, audioSid, 'Held far-end audio subscription changed during drain');
-      const before = harness.status();
-      try {
-        return await observeSilence(() => {
-          const status = harness.status();
-          return { ...status, samples: status.receivedSamples };
-        }, { deadlineMs: budget.deadlineMs, durationMs: 1000, gapLimitMs: 250 });
-      } catch (error) {
-        if (error instanceof SilenceObservationError) {
-          keep('held-far-end-audio', { muted, drainThroughMs, before, after: harness.status(), windows: error.windows });
+    const nativeHold = async () => {
+      await request({ operation: 'hold', enabled: true });
+      const hold = await waitForEvent(live, 'held', true);
+      const output = await until('held native audio', async () => {
+        const held = await sample();
+        const audio = readJourneyAudio(held.reply);
+        try { return heldOutputReceipt(audio, live.sdk.observedAtMs, hold.event.atMs, held.sdk.observedAtMs); }
+        catch (error) {
+          keep('held-native-audio', { audio, sdk: held.sdk });
+          throw error;
         }
-        throw error;
-      }
-    })();
-    const nativeHold = until('held native audio', async () => {
-      const held = await sample();
-      const audio = readJourneyAudio(held.reply);
-      try { return heldOutputReceipt(audio, live.sdk.observedAtMs, hold.event.atMs, held.sdk.observedAtMs); }
-      catch (error) {
-        keep('held-native-audio', { audio, sdk: held.sdk });
-        throw error;
-      }
-    });
-    const [output, silence] = await Promise.all([nativeHold, holdCoverage]);
+      });
+      return { hold, output };
+    };
+    const [{ hold, output }, { muted, windows: silence }] = await Promise.all([nativeHold(), holdCoverage]);
     const held = await finishVideo(epoch, { ...hold, actionAtMs, operation: 'hold' });
     const finalAudio = readJourneyAudio(held.reply);
     const finalOutput = heldOutputReceipt(finalAudio, live.sdk.observedAtMs, hold.event.atMs, held.sdk.observedAtMs);
     assert.deepEqual(finalOutput, output, 'Native held output changed during observation');
-    assert.deepEqual(audioGate(), muted, 'Held audio publication changed during observation');
-    assert.equal(harness.status().activeTrackSid, audioSid, 'Held far-end audio subscription changed');
+    assert.deepEqual(await audioGate(), muted, 'Held audio publication changed during observation');
+    assert.equal((await harness.status()).activeTrackSid, audioSid, 'Held far-end audio subscription changed');
     keep('held-audio', { host: silence, native: finalAudio, output, muted });
     await epoch.peer.stop();
     const next = await harness.openVideo(clockID);
@@ -342,23 +332,24 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
     departedSource = await epoch.peer.stop();
     assert.ok(performance.now() - actionAtMs < videoGates.gapMs, 'Video was no longer fresh before far-end departure');
     await harness.act({ type: 'leave' });
-    assert.equal(harness.status().connected, false, 'Far-end peer did not leave');
+    assert.equal((await harness.status()).connected, false, 'Far-end peer did not leave');
   } else if (videoAtEnd) {
-    epoch.peer.freeze();
+    await epoch.peer.freeze();
     await Promise.all([request({ operation: 'end' }), epoch.peer.stop()]);
   } else await request({ operation: 'end' });
   const ended = await waitForEvent(live, 'ended', videoAtEnd);
   if (!remote) {
-    const departed = await until('far-end audio departure', () => harness.audioLifecycle().afterDisconnect ?? undefined);
+    const departed = await until('far-end audio departure', async () => (await harness.audioLifecycle()).afterDisconnect ?? undefined);
     await waitThrough(departed.startedAtMs + 1000);
-    keep('terminal-audio', assertLocalAudioDeparture(harness, actionAtMs, phaseIds));
+    keep('terminal-audio', await assertLocalAudioDeparture(harness, actionAtMs, phaseIds));
   }
   const final = videoAtEnd ? await finishVideo(epoch, { ...ended, actionAtMs, operation: 'stop' }, departedSource) : await sample();
   assert.deepEqual(final.sdk.events, ended.sample.sdk.events, 'SDK video history changed after end');
   if (downgradedBoundary) {
-    const earlierOff = measure(final, epoch, downgradedBoundary);
+    const hostVideo = await epoch.peer.snapshot();
+    const earlierOff = measure(final, epoch, hostVideo, downgradedBoundary);
     keep('downgrade-through-end', { receipts: earlierOff, sdk: final.sdk, native: final.media, bracket: final.bracket,
-      host: epoch.peer.observation() });
+      host: hostVideo.up });
     assert.ok(earlierOff?.up?.offPassed && earlierOff.down.offPassed && final.media.publication === null &&
       !final.media.actions.some(a => a.atMs >= downgradedBoundary.event.atMs &&
         (a.kind === 'published' || a.kind === 'remotePublished')), 'Video returned after downgrade');
@@ -389,8 +380,7 @@ const [requestedSimulator, app, output, selection] = process.argv.slice(2);
 await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulatorApp) => {
   const watchdogAbort = new AbortController();
   const signal = AbortSignal.any([guardSignal, watchdogAbort.signal]);
-  const { startHarness } = await import('./harness.ts');
-  const { dispose } = await import('@livekit/rtc-node');
+  const { startIsolatedHarness } = await import('./harness.ts');
   assert.ok(requestedSimulator && app && output && cases.some(name => name === selection),
     'Usage: video-journey.ts <simulator|lease> <app> <result> <initial-local|app-downgrade|server-remote|hold-resume>');
   const simulator = leasedSimulator ?? requestedSimulator;
@@ -400,7 +390,7 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
   const bundle = 'com.example.voipconversations';
   const simctl = (...args: string[]) => command('xcrun', ['simctl', ...args], 120_000, signal);
   const harnessDirectory = output + '.harness';
-  let harness: MediaHarness | undefined, fixtureFile: string | undefined;
+  let harness: IsolatedHarness | undefined, fixtureFile: string | undefined;
   let watchdog: ReturnType<typeof setTimeout> | undefined;
   let failure: unknown;
   let journeyCompleted = false;
@@ -431,7 +421,7 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
     const mailbox = prepareNativeJourney(directory, { fixtureId, conversationId });
     signal.throwIfAborted();
     // Retain uplink already received while the native decoder and output fill their windows.
-    harness = await startHarness(harnessDirectory, fixtureId,
+    harness = await startIsolatedHarness(harnessDirectory, fixtureId,
       { captureSeconds: journeyCaptureSeconds, audioQueueMs: journeyAudioQueueMs });
     signal.throwIfAborted();
     watchdog = setTimeout(hardStop, 180_000).unref();
@@ -468,7 +458,7 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
         // The first termination can race an interrupted launch.
         await terminate();
       } finally {
-        try { await harness?.stop(); } finally { await deadline(10_000, 'RTC disposal', dispose); }
+        await harness?.stop();
       }
       if (journeyCompleted) {
         signal.throwIfAborted();

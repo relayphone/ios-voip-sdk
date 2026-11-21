@@ -39,7 +39,6 @@ function timestamp(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw Error('Invalid native journey time');
   return value;
 }
-// The mailbox shares an event loop with the media senders and heartbeat timers.
 async function read(path: string, signal: AbortSignal, audioBudget?: NativeJourneyBudget): Promise<unknown> {
   try {
     if (audioBudget) return await decodeAudioSnapshot(await readFile(path, { signal }), audioBudget);

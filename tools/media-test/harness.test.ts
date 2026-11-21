@@ -12,7 +12,8 @@ import { dispose, Room, RoomEvent } from '@livekit/rtc-node';
 import { command, deadline } from './fixture-runtime.ts';
 import { serverBinary, startServer } from './server.ts';
 import { MediaPeer } from './peer.ts';
-import { parseAction, startHarness } from './harness.ts';
+import { parseAction, startHarness, startIsolatedHarness } from './harness.ts';
+import { startPeerProcess } from './peer-process.ts';
 import { createMarker, detectMarker, emissionSamples } from '../../expo/src/testing/marker.ts';
 import { measureMarker, markerReport, type PCMCapture } from './marker-evidence.ts';
 import { measureMarkerAsync } from './measure-marker.ts';
@@ -22,12 +23,12 @@ const root = mkdtempSync(join(tmpdir(), 'media-harness-test-'));
 let binary: string;
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
-async function waitFor<T>(label: string, observe: () => T | undefined): Promise<T> {
+async function waitFor<T>(label: string, observe: () => T | undefined | Promise<T | undefined>): Promise<T> {
   let observing = true;
   try {
     return await deadline(15_000, label, async () => {
       while (observing) {
-        const value = observe();
+        const value = await observe();
         if (value !== undefined) return value;
         await pause(50);
       }
@@ -158,6 +159,39 @@ test('real peer publishes markers, captures app audio, holds silent and leaves',
     await harness.act({ type: 'leave' }); assert.ok(!harness.status().connected);
     await until(() => !app.status().trackAvailable);
   } finally { await app.close(); await harness.stop(); }
+});
+test('far-end receiver windows stay continuous while the coordinator is blocked', async () => {
+  const harness = await startIsolatedHarness(directory('isolated-peer'), randomUUID());
+  let app: Awaited<ReturnType<typeof startPeerProcess>> | undefined;
+  try {
+    app = await startPeerProcess(harness.credentials('app'), {}, (await harness.status()).serverPid);
+    await app.act({ type: 'publish', markerId: 'isolated-peer:uplink' });
+    await waitFor('Far-end PCM', async () => {
+      const state = await harness.status();
+      return state.readerLive && state.receivedSamples > 0 ? state : undefined;
+    });
+    const video = await harness.openVideo(randomUUID());
+    const videoStartedAtMs = performance.now();
+    await video.publish(1);
+    await harness.act({ type: 'capture' });
+    const observed = harness.receiverWindows(performance.now() + 6_000);
+    await harness.status(); // The observer starts before this later request is served.
+    const blockedAtMs = performance.now();
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1400);
+    const resumedAtMs = performance.now();
+    const result = await observed;
+    assert.equal(result.failure, undefined);
+    assert.deepEqual(result.windows.map(({ phase, window }) => [phase, window.verdict]),
+      [['window-1', 'observed'], ['window-2', 'observed'], ['window-3', 'observed']]);
+    assert.ok(result.windows.flatMap(({ window }) => window.ticksMs).some(tick =>
+      tick > blockedAtMs + 250 && tick < resumedAtMs - 250), 'Observation did not continue during the stall');
+    assert.ok((await harness.status()).receivedSamples >= 48_000 * 2);
+    const { down } = await video.snapshot();
+    assert.ok(down.generated[0]!.sourceTimeUs / 1000 >= videoStartedAtMs);
+    assert.ok(down.generated.some(frame => frame.sourceTimeUs / 1000 > blockedAtMs && frame.sourceTimeUs / 1000 < resumedAtMs));
+  } finally {
+    try { await app?.close(); } finally { await harness.stop(); }
+  }
 });
 test('renewing far-end audio replaces its receiver without replacing the room or uplink', async () => {
   const harness = await startHarness(directory('renew-audio'), 'renew-audio');
