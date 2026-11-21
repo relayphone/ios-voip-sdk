@@ -8,4 +8,7 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "voip-android"
-include(":core", ":runtime", ":system", ":testing")
+include(":core", ":runtime", ":testing")
+if (providers.gradleProperty("jvmOnly").orNull != "true") {
+    include(":system")
+}

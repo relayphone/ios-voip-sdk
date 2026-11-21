@@ -17,8 +17,11 @@ on:
       - "Sources/CKSimProtocol/**"
       - "Sources/Engine/**"
       - "Sources/Interposition/**"
+      - "spec/**"
       - "VERSION"
+      - "tools/conformance/**"
       - "tools/expo-package*"
+      - "tools/json-fields.ts"
       - ".github/actions/setup/**"
       - ".github/workflows/expo.yml"
   pull_request:
@@ -33,6 +36,21 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  linux:
+    name: Linux Expo package checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          xcode: "false"
+      - run: npm ci --prefix expo --ignore-scripts --no-audit --no-fund
+      - run: npm run typecheck --prefix expo
+      - run: npm run test:linux --prefix expo
+
   package:
     name: TypeScript and packed iOS example
     runs-on: xcode-27
