@@ -9,10 +9,15 @@ export function configureBundledExample(ios: string): void {
     'unset SKIP_BUNDLING\nexport FORCE_BUNDLING=1\nexport EXTRA_PACKAGER_ARGS="--dev false"\nexport ENTRY_FILE="$PROJECT_DIR/../journeys/entry.ts"\n');
 }
 
-/** Only the integration build uses the fixture's explicit connection deadline. */
-export function configureJourneyDeadline(ios: string, execute: typeof run = run): void {
+/** Only the integration build uses the fixture's explicit deadlines. */
+export function configureJourneyDeadline(ios: string, execute: typeof run = run, media = false): void {
+  const plist = join(ios, 'VoIPExample/Info.plist');
   execute('plutil', ['-replace', 'VoIPConversationsFulfillAnswerCallTimeout', '-integer', '27',
-    join(ios, 'VoIPExample/Info.plist')]);
+    plist]);
+  if (media) {
+    // The media fixture performs a cold LiveKit handshake during Answer preparation.
+    execute('plutil', ['-replace', 'VoIPConversationsMediaPreparationTimeout', '-integer', '10', plist]);
+  }
 }
 
 /** Add transaction metrics to the pinned LiveKit client in the media fixture build. */
@@ -30,6 +35,6 @@ if (isMain(import.meta.url)) await main(() => {
     throw new Error('Usage: expo-journey-bundle.ts <example iOS directory> [--media]');
   }
   configureBundledExample(resolve(ios));
-  configureJourneyDeadline(resolve(ios));
+  configureJourneyDeadline(resolve(ios), run, media === '--media');
   if (media) configureMediaWebSocketTiming(resolve(ios));
 });

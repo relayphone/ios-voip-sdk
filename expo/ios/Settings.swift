@@ -35,6 +35,8 @@ struct Settings: Sendable {
       iconTemplateImageData: icon.flatMap { try? Data(contentsOf: $0) },
       deadlines: Deadlines(
         ring: seconds("VoIPConversationsIncomingCallTimeout") ?? defaults.ring,
+        mediaPreparation: seconds("VoIPConversationsMediaPreparationTimeout")
+          ?? defaults.mediaPreparation,
         connect: seconds("VoIPConversationsFulfillAnswerCallTimeout") ?? defaults.connect))
     mediaAdapter =
       MediaAdapter(rawValue: info["VoIPConversationsMediaAdapter"] as? String ?? "") ?? .webrtc
