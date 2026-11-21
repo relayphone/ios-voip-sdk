@@ -3,6 +3,7 @@ import { createCallsStore } from "../calls/store.ts";
 import { callID, eventID, type Call, type CallError, type CallingLine, type EndReason } from "../calls/model.ts";
 import { bridgeError, ended, incomingOutcome, performed, type IncomingOutcome } from "../calls/receipts.ts";
 import { line as callingLine } from "../calls/wire-v0.ts";
+import { audioRoutes, matchesAudioReceipt, parseToneDigits, type AndroidAudioAction } from "./android-audio.ts";
 import type { NativeEvents, NativeTransport } from "./transport.ts";
 import type {
   Conversation, ConversationEnd, ConversationErrorCode, ConversationId, IncomingCallPayload, IncomingConversationOutcome,
@@ -12,10 +13,12 @@ import type {
 type Handle = Call["parties"][number]["handle"];
 type EventValue = NativeEvents[keyof NativeEvents];
 type RemoteEventInput =
+  | { kind: "connected" }
   | { kind: "ended"; reason: ReturnType<typeof remoteReason> }
   | { kind: "partiesChanged"; parties: readonly ReturnType<typeof party>[] };
 type CommandInput =
-  | { id: ConversationId; action: { kind: "answer" | "end" } }
+  | { id: ConversationId; action: { kind: "answer" | "end" } | AndroidAudioAction }
+  | { id: string }
   | { kind: MediaKind }
   | (RemoteEventInput & { target: { kind: "call"; id: string }; eventID: string })
   | { callID: string; eventID: string; line: CallingLine; party: ReturnType<typeof callerParty> };
@@ -32,6 +35,7 @@ export interface AndroidBridgeEvents {
   bridgeFrame: { json: string };
   incomingPush: { json: string };
   pushTokenUpdated: NativeEvents["pushTokenUpdated"];
+  audioRoutesChanged: { json: string };
 }
 
 export interface AndroidBridge {
@@ -87,8 +91,18 @@ export function bindAndroid(native: AndroidBridge) {
       operation: literal(operation),
       result: union(object({ ok: literal(true), value: raw => ({ decoded: decode(raw) }) }), refused),
     })(JSON.parse(await native.command(JSON.stringify({ kind: "command", operation, input }))));
-    if (!reply.result.ok) throw commandError(reply.result.error);
+    if (!reply.result.ok) {
+      if (operation === "audio.select" && reply.result.error.kind === "systemFailed") throw routeFailure();
+      throw commandError(reply.result.error);
+    }
     return reply.result.value.decoded;
+  }
+
+  async function performAudio(id: ConversationId, action: AndroidAudioAction) {
+    const reply = await command("perform", performed, { id, action });
+    if (!matchesAudioReceipt(action, callID(id), reply)) {
+      throw failure("conversation", "Invalid audio action receipt");
+    }
   }
 
   let revision = 0;
@@ -104,10 +118,12 @@ export function bindAndroid(native: AndroidBridge) {
     }
     if (observation.kind === "actionPerformed") {
       const { origin, action } = observation.receipt;
-      if (action.kind === "answer" || action.kind === "end" || action.kind === "hold") {
-        const { callID, ...performed } = action;
+      const { callID, ...performed } = action;
+      if (performed.kind === "answer" || performed.kind === "end" || performed.kind === "hold" ||
+          performed.kind === "mute" || performed.kind === "tones") {
         emit("conversationEvent", { type: "actionPerformed", payload: {
-          conversationId: conversationID(callID), origin, action: performed,
+          conversationId: conversationID(callID), origin,
+          action: performed.kind === "tones" ? { kind: "tones", digits: performed.digits.join("") } : performed,
         } });
       }
     }
@@ -162,6 +178,14 @@ export function bindAndroid(native: AndroidBridge) {
     presentOutcome(eventId, serverCallId, outcome);
   });
   native.addListener("pushTokenUpdated", value => emit("pushTokenUpdated", value));
+  const pendingMutes = new Map<ConversationId, Promise<void>>();
+  let routeRevision = 0;
+  native.addListener("audioRoutesChanged", ({ json }) => {
+    const next = audioRoutes(JSON.parse(json));
+    if (next.revision <= routeRevision) return;
+    routeRevision = next.revision;
+    emit("audioRoutesChanged", next);
+  });
   const transport: NativeTransport = {
     get snapshot() { return current; },
     mediaAdapter: "none",
@@ -176,7 +200,7 @@ export function bindAndroid(native: AndroidBridge) {
       return { remove: () => { subscribers.delete(subscription); } };
     },
     getConversations: async () => current,
-    getAudioRoutes: async () => ({ revision: 0, routes: [], current: null }),
+    getAudioRoutes: () => command("audio.routes", audioRoutes),
     getPushToken: () => native.getPushToken(),
     setHandlerAttached(attached) { if (attached) unsupported("Call placement"); },
     settleAction() { unsupported("Call placement"); },
@@ -184,11 +208,33 @@ export function bindAndroid(native: AndroidBridge) {
     joinConversation: id => perform(id, "answer"),
     endConversation: id => perform(id, "end"),
     setHeld: async () => unsupported("Hold"),
-    setMuted: async () => unsupported("Mute"),
+    async setMuted(id, muted) {
+      const pending = pendingMutes.get(id) ?? Promise.resolve();
+      const request = pending.catch(() => undefined).then(async () => {
+        if (current.conversations.find(call => call.id === id)?.isMuted === muted) return;
+        await performAudio(id, { kind: "mute", muted });
+      });
+      pendingMutes.set(id, request);
+      try {
+        await request;
+      } finally {
+        if (pendingMutes.get(id) === request) pendingMutes.delete(id);
+      }
+    },
     setConversationVideo: async () => unsupported("Video"),
-    playTones: async () => unsupported("Tones"),
+    async playTones(id, digits) {
+      let parsed;
+      try { parsed = parseToneDigits(digits); }
+      catch { throw failure("invalid_arguments", "Invalid DTMF digits"); }
+      await performAudio(id, { kind: "tones", digits: parsed });
+    },
     mergeConversations: async () => unsupported("Call merge"),
-    selectAudioRoute: async () => unsupported("Audio route selection"),
+    async selectAudioRoute(id) {
+      if (!id) throw routeFailure();
+      await command("audio.select", raw => {
+        if (raw !== null) throw new TypeError("Invalid audio route selection reply");
+      }, { id });
+    },
     async reportIncomingConversation(payload) {
       if (payload.hasVideo) return unsupported("Video");
       if (payload.media) return unsupported("Native media pre-warm");
@@ -199,7 +245,7 @@ export function bindAndroid(native: AndroidBridge) {
     },
     async reportConversation(id, report) {
       switch (report.type) {
-        case "connected": return unsupported("Connected reports");
+        case "connected": await receive(id, { kind: "connected" }); break;
         case "ended":
           if (report.reason === "local") await perform(id, "end");
           else await receive(id, { kind: "ended", reason: remoteReason(report.reason) });
@@ -255,6 +301,9 @@ function commandError(error: CallError) {
     default: return failure("conversation", "The call action failed");
   }
 }
+function routeFailure() {
+  return failure("conversation", "The audio route is unavailable or refused");
+}
 function newID() { return `expo-${Date.now()}-${Math.random().toString(36).slice(2)}`; }
 function party(member: Participant) {
   const handle = member.phoneNumber ? { kind: "phone", e164: phone(member.phoneNumber) }
@@ -290,7 +339,7 @@ function snapshot(calls: readonly Call[], revision: number) {
     const base = {
       id: conversationID(call.id),
       members: call.parties.map(({ id, handle, displayName }) => ({ ...participant(handle), id, displayName })),
-      capabilities: { hold: false, merge: false, tones: false, video: false },
+      capabilities: { hold: false, merge: false, tones: true, video: false },
       isVideo: call.video.confirmed === "video", isMuted: call.muted, direction: call.direction,
       ...(call.media.owner === "native" && call.media.stage === "prepared" && { media: "native" as const }),
     };

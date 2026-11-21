@@ -1,5 +1,6 @@
 package com.relayphone.voip.system
 
+import android.media.AudioManager
 import android.net.Uri
 import android.os.ParcelUuid
 import android.telecom.DisconnectCause
@@ -14,6 +15,7 @@ import com.relayphone.voip.Handle
 
 internal class CoreTelecomBackend(
     private val calls: CallsManager,
+    private val audioManager: AudioManager,
     private val notification: AdmissionNotification,
     private val customIncomingPresentation: Boolean = false,
 ) : TelecomBackend<ParcelUuid> {
@@ -34,6 +36,7 @@ internal class CoreTelecomBackend(
             else CallAttributesCompat.DIRECTION_OUTGOING,
         )
         var notificationPosted = false
+        var audio: CoreTelecomAudio? = null
         try {
             translateFailure {
                 calls.addCall(
@@ -43,17 +46,24 @@ internal class CoreTelecomBackend(
                     onSetActive = { callbacks.setHeld(false) },
                     onSetInactive = { callbacks.setHeld(true) },
                 ) {
-                    admitted(Control(this))
+                    val control = Control(this, audioManager)
+                    audio = control.audio
+                    admitted(control)
                     if (call.direction != Direction.INCOMING || !customIncomingPresentation)
                         notificationPosted = notification.post(call)
                 }
             }
         } finally {
-            if (notificationPosted) notification.remove(call.id)
+            try {
+                audio?.close()
+            } finally {
+                if (notificationPosted) notification.remove(call.id)
+            }
         }
     }
 
-    private class Control(private val scope: CallControlScope) : TelecomControl<ParcelUuid> {
+    private class Control(private val scope: CallControlScope, manager: AudioManager) : TelecomControl<ParcelUuid> {
+        override val audio = CoreTelecomAudio(scope, manager)
         override val id: ParcelUuid = scope.getCallId()
 
         override suspend fun answer() = translateFailure {
@@ -76,11 +86,11 @@ internal class CoreTelecomBackend(
     }
 }
 
-private fun CallControlResult.requireSuccess() {
+internal fun CallControlResult.requireSuccess() {
     if (this is CallControlResult.Error) throw NativeTelecomFailure(errorCode)
 }
 
-private inline fun <T> translateFailure(block: () -> T): T = try {
+internal inline fun <T> translateFailure(block: () -> T): T = try {
     block()
 } catch (error: CallException) {
     throw NativeTelecomFailure(error.code)

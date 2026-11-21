@@ -63,6 +63,21 @@ Public API changes include migration guidance.
 
 ### Added
 
+- Expo adds `getAudioRoutes()` on iOS and Android. Read it for a revisioned snapshot of the
+  available routes and current output, or use `useAudioRoutes()` to observe changes. On
+  Android, route IDs belong to the active call. Read a fresh snapshot when switching
+  calls, and pass an ID from that snapshot to `selectAudioRoute(id)`. The snapshot
+  is empty when there is no active audio owner. Keep handling typed `unsupported`
+  errors where an audio capability is unavailable.
+- Android supports `setMuted` and `playTones` through the existing Expo API. Use the
+  confirmed `actionPerformed` event to update application-owned media for app and
+  system mute changes. If JavaScript owns the media transport, forward the performed
+  tone digits through that transport when the other party needs to receive them.
+  Android hosts that use the Kotlin SDK can read `AndroidTelecomSystem.routes` and
+  select a route through `CallAudio.selectRoute`. Handle `Feature.AUDIO_ROUTES` in
+  exhaustive Kotlin `when` expressions over `Feature`. A registered native `MediaPort`
+  confirms tone sends through `sendTones`. The default Expo path confirms local playback.
+
 - Swift calls expose an immutable `Call.line`. Pass a `CallingLine` with an `AccountID`, `LineID`
   and display label when reporting, joining or starting a call on a specific line. Default-format
   VoIP pushes accept `line` with `accountID`, `id` and `label`. Existing callers that omit the line

@@ -21,7 +21,7 @@ internal class CallHost private constructor(context: Context) {
     val presentation = IncomingCallNotification(context)
     val binding = CallBinding(scope, line, clock, NativeCallMedia.start(), presentation) { submit ->
         val telecom = AndroidTelecomSystem.register(context, 34, true, submit)
-        CallSystem(telecom, telecom::answerWithReceipt, telecom::answerFromNotification)
+        CallSystem(telecom, telecom::answerWithReceipt, telecom::answerFromNotification, audio = telecom)
     }
     val push by lazy {
         AndroidPushStatus(context, binding.state, presentation, app.metaData?.getBoolean("com.relayphone.voip.fcm") == true)

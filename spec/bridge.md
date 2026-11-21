@@ -94,6 +94,11 @@ operation. An operation with no input omits that field. A successful result is
 | `permissions.request` | Same permission selector | Same status after a foreground request |
 | `push.registration` | Omitted | v1 registration or `{kind:"unknown"}` |
 | `push.health` | Omitted | v1 health or `{kind:"unknown"}` |
+| `audio.routes` | Omitted | `{revision,routes,current}`, with opaque endpoint IDs and a nullable current output |
+| `audio.select` | `id` from the available routes | Void on acceptance, with actual output reported by the route observation |
+
+Android emits `audioRoutesChanged` using the same snapshot shape as `audio.routes`. Its revision
+advances when the list or current output changes, independently of the call journal cursor.
 
 The matching successful `start` or `perform` reply includes a cursor at or after the
 revision that records completion. A performed reply returns the same receipt as the
@@ -102,7 +107,8 @@ Its origin belongs to the original request, including when an app request shares
 system Answer. Remote transport facts do not create action receipts.
 Start completes at placement and native start. Answer completes at authorized system
 settlement. Hold, Mute and Video complete on confirmation, and Tones completes on confirmation
-of the local send. Queueing work does not complete the action. A repeated local End returns
+of the local send. With JavaScript-owned media, the app can forward the performed digits to its
+media transport. Queueing work does not complete the action. A repeated local End returns
 the original receipt, whereas an End after remote termination returns the original reason with
 `alreadyEnded`. A repeated or already-ended End emits no new action frame.
 

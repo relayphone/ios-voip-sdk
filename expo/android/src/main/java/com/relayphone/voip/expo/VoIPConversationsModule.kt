@@ -17,7 +17,7 @@ class VoIPConversationsModule : Module() {
 
     override fun definition() = ModuleDefinition {
         Name("VoIPConversations")
-        Events("bridgeFrame", "incomingPush", "pushTokenUpdated")
+        Events("bridgeFrame", "incomingPush", "pushTokenUpdated", "audioRoutesChanged")
         OnCreate {
             service = CallHost.get(requireNotNull(appContext.reactContext))
             CallHost.scope.launch { service.push.start() }
@@ -28,12 +28,21 @@ class VoIPConversationsModule : Module() {
             }
         }
         OnStopObserving("incomingPush") { pushEvents?.cancel() }
+        OnStartObserving("audioRoutesChanged") {
+            audioEvents = CallHost.scope.launch {
+                service.binding.audioRoutes()?.collect { routes ->
+                    sendEvent("audioRoutesChanged", mapOf("json" to routes.bridgeValue().toString()))
+                }
+            }
+        }
+        OnStopObserving("audioRoutesChanged") { audioEvents?.cancel() }
         OnStartObserving("pushTokenUpdated") { CallHost.scope.launch { service.push.tokenObservers.add(sendToken) } }
         OnStopObserving("pushTokenUpdated") { CallHost.scope.launch { service.push.tokenObservers.remove(sendToken) } }
         OnActivityEntersForeground { CallHost.scope.launch { service.push.refresh() } }
         OnDestroy {
             service.binding.state.detach(sendFrame)
             pushEvents?.cancel()
+            audioEvents?.cancel()
             CallHost.scope.launch { service.push.tokenObservers.remove(sendToken) }
         }
         Function("negotiate") { source: String ->
@@ -79,4 +88,5 @@ class VoIPConversationsModule : Module() {
 
     private lateinit var service: CallHost
     private var pushEvents: Job? = null
+    private var audioEvents: Job? = null
 }
