@@ -14,7 +14,7 @@ import { assertNativeTeardown } from './result-receipt.ts';
 import { SilenceObservationError } from './silence-window.ts';
 import { withSimulatorMediaAudio } from './simulator-media.ts';
 import { diagnoseNativeStartup } from './startup-diagnostics.ts';
-import { assertDuplexAudio, assertLocalAudioDeparture, hasDuplexSamples, hasUplinkSamples, heldAudioDrainMs, heldOutputReceipt, journeyAudioQueueMs, journeyCaptureSeconds, readAudioRoute, readJourneyAudio } from './video-journey-audio.ts';
+import { assertLocalAudioDeparture, captureDuplexAudio, hasDuplexSamples, hasUplinkSamples, heldAudioDrainMs, heldOutputReceipt, journeyAudioQueueMs, journeyCaptureSeconds, measureDuplexAudio, readAudioRoute, readJourneyAudio } from './video-journey-audio.ts';
 import { appParticipant, assertRemoteProducer, assessJourneyVideo, readVideoSnapshot, remoteUplinkCoverage, type VideoSnapshot } from './video-journey-evidence.ts';
 import { hostVideoBoundary, videoGates, type VideoSourceReceipt } from './video-observation.ts';
 
@@ -26,7 +26,8 @@ type Epoch = { enable: Boundary; number: number; peer: VideoPeer };
 type Report = { scenario: JourneyCase; verdict: 'failed' | 'passed'; checkpoints: { phase: string; evidence: unknown }[] };
 
 async function runJourney(harness: IsolatedHarness, mailbox: ReturnType<typeof prepareNativeJourney>, input: {
-  scenario: JourneyCase; conversationId: string; clockID: string; initialPeer: VideoPeer; report: Report; budget: NativeJourneyBudget;
+  scenario: JourneyCase; conversationId: string; clockID: string; initialPeer: VideoPeer; report: Report;
+  budget: NativeJourneyBudget; analyzeAudio: (() => Promise<void>)[];
 }) {
   const { scenario, conversationId, clockID, initialPeer, report, budget } = input;
   const keep = (phase: string, evidence: unknown) => { report.checkpoints.push({ phase, evidence }); };
@@ -104,12 +105,19 @@ async function runJourney(harness: IsolatedHarness, mailbox: ReturnType<typeof p
         capture: { sentAtMs: snapshotRequestedAtMs, receivedAtMs: capturedAtMs, nativeAtMs: snapshot.observedAtMs },
         decoded: { callbacks: pcm.decoded.observation, rtp: pcm.decoded.pcm?.transport },
         output: { callbacks: pcm.output.observation, rtp: pcm.output.pcm?.transport } };
-      const { markers, uplinkCapture } = await assertDuplexAudio(pcm, harness, { up: createMarker(phaseId), down: createMarker(downId) });
-      keep(label, { phaseId, remoteAudioPublication: pcm.remoteAudioPublication,
-        startedAtMs, snapshotRequestedAtMs, capturedAtMs, analyzedAtMs: performance.now(), uplinkCapture, downlink, markers });
-      for (const marker of Object.values(markers)) {
-        assert.ok(marker.clean && marker.complete && marker.postRollObserved, `${label}: missing clean fresh audio`);
-      }
+      const recording = await captureDuplexAudio(pcm, harness);
+      const evidence = { phaseId, remoteAudioPublication: pcm.remoteAudioPublication,
+        startedAtMs, snapshotRequestedAtMs, capturedAtMs, uplinkCapture: recording.uplinkCapture, downlink };
+      keep(label, evidence);
+      // Analyzing three PCM streams together can starve both the simulator and the peer.
+      // Retain this phase's bounded captures for analysis after media has shut down.
+      input.analyzeAudio.push(async () => {
+        const markers = await measureDuplexAudio(recording.pcm, { up: createMarker(phaseId), down: createMarker(downId) });
+        Object.assign(evidence, { analyzedAtMs: performance.now(), markers });
+        for (const marker of Object.values(markers)) {
+          assert.ok(marker.clean && marker.complete && marker.postRollObserved, `${label}: missing clean fresh audio`);
+        }
+      });
       deadlineCheck();
     } catch (error) {
       keep(`${label}-capture`, { phaseId, startedAtMs, observedAtMs: performance.now(), sender: await harness.downlinkPacing(), ...capture });
@@ -395,6 +403,7 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
   const simulator = leasedSimulator ?? requestedSimulator;
   const scenario = selection as JourneyCase;
   const report: Report = { scenario, verdict: 'failed', checkpoints: [] };
+  const analyzeAudio: (() => Promise<void>)[] = [];
   const fixtureId = randomUUID(), conversationId = randomUUID() as ConversationId, clockID = randomUUID();
   const bundle = 'com.example.voipconversations';
   const simctl = (...args: string[]) => command('xcrun', ['simctl', ...args], 120_000, signal);
@@ -446,7 +455,7 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
     const launched = await simctl('launch', '--terminate-running-process', simulator, bundle);
     if (trackSimulatorApp) trackSimulatorApp(Number(/:\s*(\d+)\s*$/.exec(launched)?.[1]));
     const budget = { deadlineMs: performance.now() + 30_000, signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]) };
-    await runJourney(harness, mailbox, { scenario, conversationId, clockID, initialPeer, report, budget });
+    await runJourney(harness, mailbox, { scenario, conversationId, clockID, initialPeer, report, budget, analyzeAudio });
     journeyCompleted = true;
   } catch (error) {
     failure = error;
@@ -469,7 +478,11 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
       } finally {
         await harness?.stop();
       }
-      if (journeyCompleted) {
+      signal.throwIfAborted();
+      for (const analyze of analyzeAudio) {
+        try { await analyze(); } catch (error) { failure ??= error; }
+      }
+      if (journeyCompleted && failure === undefined) {
         signal.throwIfAborted();
         report.verdict = 'passed';
       }

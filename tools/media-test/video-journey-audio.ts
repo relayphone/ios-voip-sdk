@@ -51,16 +51,21 @@ export function hasDuplexSamples(audio: JourneyAudio, host: HostStatus) {
       s.transportCount >= 2 && s.lastTransportSample >= s.sampleRate * journeyCaptureSeconds);
 }
 
-export async function assertDuplexAudio(audio: JourneyAudio, harness: IsolatedHarness, markers: { up: MediaMarker; down: MediaMarker }) {
+export async function captureDuplexAudio(audio: JourneyAudio, harness: IsolatedHarness) {
   assert.ok(audio.decoded.pcm && audio.output.pcm, 'Missing native PCM from the requested audio snapshot');
   const host = await harness.observation();
-  const [up, decoded, output] = await Promise.all([
-    measureMarkerAsync(host.capture, markers.up, 'host-poll'),
-    measureMarkerAsync(audio.decoded.pcm, markers.down),
-    measureMarkerAsync(audio.output.pcm, markers.down),
-  ]);
-  return { markers: { up, decoded, output },
+  return { pcm: { up: host.capture, decoded: audio.decoded.pcm, output: audio.output.pcm },
     uplinkCapture: { retainedSamples: host.capture.channels[0]?.length ?? 0, receivedSamples: host.receiver.receivedSamples } };
+}
+
+export async function measureDuplexAudio(pcm: Awaited<ReturnType<typeof captureDuplexAudio>>['pcm'],
+  markers: { up: MediaMarker; down: MediaMarker }) {
+  const [up, decoded, output] = await Promise.all([
+    measureMarkerAsync(pcm.up, markers.up, 'host-poll'),
+    measureMarkerAsync(pcm.decoded, markers.down),
+    measureMarkerAsync(pcm.output, markers.down),
+  ]);
+  return { up, decoded, output };
 }
 
 export function heldOutputReceipt(audio: JourneyAudio, beforeHoldAtMs: number, holdAtMs: number, observedAtMs: number) {
