@@ -131,9 +131,17 @@ async function runJourney(harness: IsolatedHarness, mailbox: ReturnType<typeof p
   async function freshVideo(label: string, epoch: Epoch, terminal?: Parameters<typeof assessJourneyVideo>[5]) {
     const firstDeadline = hostVideoBoundary(epoch.enable.event.atMs, epoch.enable.sample.bracket).latest + videoGates.firstMs;
     let priorPoll: { startedAtMs: number; sampledAtMs: number; assessedAtMs: number } | undefined;
+    let priorSnapshot: VideoSnapshot | undefined;
     return until(label, async () => {
       const startedAtMs = performance.now();
-      const state = await sample();
+      let state: VideoSnapshot;
+      try { state = await sample(); }
+      catch (error) {
+        keep(`${label}-last-observation`, { priorPoll, waitingSinceMs: startedAtMs,
+          sdk: priorSnapshot?.sdk, native: priorSnapshot?.media, bracket: priorSnapshot?.bracket });
+        throw error;
+      }
+      priorSnapshot = state;
       const sampledAtMs = performance.now();
       const hostVideo = await epoch.peer.snapshot();
       const receipts = measure(state, epoch, hostVideo, terminal);
@@ -289,6 +297,7 @@ async function runJourney(harness: IsolatedHarness, mailbox: ReturnType<typeof p
     await request({ operation: 'hold', enabled: false });
     const resume = await waitForEvent(held, 'resumed', true);
     assert.equal(resume.sample.sdk.onHold, false);
+    keep('resume-boundary', { sdk: resume.sample.sdk, native: resume.sample.media, bracket: resume.sample.bracket });
     epoch = await startVideo(resume, next, 2);
     live = await freshVideo('resumed-video', epoch);
     if (output.kind === 'engineStopped') {

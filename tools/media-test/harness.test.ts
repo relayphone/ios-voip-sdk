@@ -18,6 +18,7 @@ import { createMarker, detectMarker, emissionSamples } from '../../expo/src/test
 import { measureMarker, markerReport, type PCMCapture } from './marker-evidence.ts';
 import { measureMarkerAsync } from './measure-marker.ts';
 import { monitorReceiver } from './peer-window.ts';
+import { journeyAudioQueueMs } from './video-journey-audio.ts';
 
 const root = mkdtempSync(join(tmpdir(), 'media-harness-test-'));
 let binary: string;
@@ -191,6 +192,29 @@ test('far-end receiver windows stay continuous while the coordinator is blocked'
     assert.ok(down.generated.some(frame => frame.sourceTimeUs / 1000 > blockedAtMs && frame.sourceTimeUs / 1000 < resumedAtMs));
   } finally {
     try { await app?.close(); } finally { await harness.stop(); }
+  }
+});
+test('the journey sender feeds the receiver while frame acknowledgements are blocked', async () => {
+  const harness = await startIsolatedHarness(directory('sender-stall'), 'sender-stall');
+  const sender = new MediaPeer(undefined, 4, journeyAudioQueueMs);
+  try {
+    await sender.connect(harness.credentials('app'));
+    sender.publish('sender-stall:uplink', true);
+    const stallMs = 1_400;
+    await until(() => (sender.downlinkPacing()?.frames.at(-1)?.queuedBeforeMs ?? 0) > stallMs);
+    await harness.act({ type: 'capture' });
+    const baseline = await waitFor('Receiver counters before sender stall', async () =>
+      (await harness.observation()).capture.transport?.at(-1));
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, stallMs);
+    const after = await waitFor('Receiver counters after sender stall', async () => {
+      const current = (await harness.observation()).capture.transport?.at(-1);
+      return current && current.sample >= baseline.sample + 48_000 * 1.3 ? current : undefined;
+    });
+    assert.equal(after.streamID, baseline.streamID);
+    assert.equal(after.packetsLost, baseline.packetsLost);
+    assert.equal(after.concealedSamples, baseline.concealedSamples);
+  } finally {
+    try { await sender.close(); } finally { await harness.stop(); }
   }
 });
 test('renewing far-end audio replaces its receiver without replacing the room or uplink', async () => {

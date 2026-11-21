@@ -8,6 +8,27 @@
     func stop() async throws
   }
 
+  /// A hold and its audio-session deactivation can arrive through separate callbacks.
+  @MainActor final class MediaHoldMicrophoneGate {
+    private var muteTask: Task<Void, any Error>?
+
+    func mute(_ apply: @escaping @MainActor () async throws -> Void) async throws {
+      if let muteTask {
+        try await muteTask.value
+      } else {
+        let task = Task { try await apply() }
+        muteTask = task
+        try await task.value
+      }
+    }
+
+    func restore(_ apply: () async throws -> Void) async throws {
+      try await muteTask?.value
+      try await apply()
+      muteTask = nil
+    }
+  }
+
   /// Serialized with teardown, including when a Room release races an SDK callback.
   @MainActor final class MediaVideoPolicy {
     enum State: String, Encodable { case off, publishing, held, ended }

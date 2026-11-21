@@ -86,6 +86,35 @@ import Testing
     #expect(media.epochs == [1, 2])
     #expect(media.running && !media.muted)
   }
+  @Test func holdAndDeactivationWaitForTheSameMicrophoneMute() async throws {
+    let gate = MediaHoldMicrophoneGate()
+    var events: [String] = []
+    var finishMute: CheckedContinuation<Void, Never>?
+    let hold = Task {
+      try await gate.mute {
+        events.append("mute started")
+        await withCheckedContinuation { finishMute = $0 }
+        events.append("mute finished")
+      }
+    }
+    let deadline = ContinuousClock.now + .seconds(2)
+    while finishMute == nil, ContinuousClock.now < deadline { await Task.yield() }
+    let finish = try #require(finishMute)
+    let deactivate = Task {
+      events.append("deactivate requested")
+      try await gate.mute { events.append("duplicate mute") }
+      events.append("engine stopped")
+    }
+    while events.count < 2, ContinuousClock.now < deadline { await Task.yield() }
+    #expect(events == ["mute started", "deactivate requested"])
+    finish.resume()
+    try await hold.value
+    try await deactivate.value
+    #expect(events == ["mute started", "deactivate requested", "mute finished", "engine stopped"])
+    try await gate.restore { events.append("restored") }
+    try await gate.mute { events.append("next hold") }
+    #expect(Array(events.suffix(2)) == ["restored", "next hold"])
+  }
   @Test func concurrentTerminalJoinsAnEarlierTransition() async throws {
     let media = Transport()
     media.pauseStart = true
