@@ -109,7 +109,7 @@
       {"type":"object","properties":{"kind":{"const":"hold"},"callID":{"$ref":"#/$defs/id"},"held":{"type":"boolean"}},"required":["kind","callID","held"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"mute"},"callID":{"$ref":"#/$defs/id"},"muted":{"type":"boolean"}},"required":["kind","callID","muted"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"video"},"callID":{"$ref":"#/$defs/id"},"enabled":{"type":"boolean"}},"required":["kind","callID","enabled"],"additionalProperties":false},
-      {"type":"object","properties":{"kind":{"const":"tones"},"callID":{"$ref":"#/$defs/id"},"digits":{"type":"array","items":{"enum":["0","1","2","3","4","5","6","7","8","9","*","#","A","B","C","D","a","b","c","d"]},"minItems":1}},"required":["kind","callID","digits"],"additionalProperties":false}
+      {"type":"object","properties":{"kind":{"const":"tones"},"callID":{"$ref":"#/$defs/id"},"digits":{"type":"array","items":{"enum":["0","1","2","3","4","5","6","7","8","9","*","#"]},"minItems":1}},"required":["kind","callID","digits"],"additionalProperties":false}
     ]},
     "budgets": {"type": "object", "additionalProperties": false,
       "required": ["answer","placement","incomingRing","outgoingNoAnswer","mediaPreparation","audioActivation","audioRecovery","connection","reconnection"],

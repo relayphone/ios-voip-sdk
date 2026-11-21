@@ -29,8 +29,7 @@ test('constructors preserve opaque identities and validate domain scalars', () =
   assert.equal(milliseconds(50), 50);
   assert.throws(() => milliseconds(1.5), TypeError);
   assert.equal(dtmfDigit('#'), '#');
-  assert.equal(dtmfDigit('a'), 'a');
-  assert.throws(() => dtmfDigit('e'), TypeError);
+  assert.throws(() => dtmfDigit('a'), TypeError);
   assert.equal(httpsURL('https://example.test/claim'), 'https://example.test/claim');
   for (const invalid of ['http://example.test', 'https://u:p@example.test', 'https://exa\tmple.test']) {
     assert.throws(() => httpsURL(invalid), TypeError);

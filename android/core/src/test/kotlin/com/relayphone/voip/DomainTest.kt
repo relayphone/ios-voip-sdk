@@ -49,9 +49,9 @@ class DomainTest {
         assertNotEquals(Action.Hold(CallID("a"), true), Action.Hold(CallID("a"), false))
         assertNotEquals(Action.Mute(CallID("a"), true), Action.Mute(CallID("a"), false))
         assertNotEquals(Action.Video(CallID("a"), true), Action.Video(CallID("a"), false))
-        val tones = Action.Tones(CallID("a"), DTMFSequence("0123456789*#ABCDabcd"))
-        assertEquals("0123456789*#ABCDabcd", tones.digits.value)
-        listOf("", "1,2", "e", "1 2", "１２").forEach {
+        val tones = Action.Tones(CallID("a"), DTMFSequence("0123456789*#"))
+        assertEquals("0123456789*#", tones.digits.value)
+        listOf("", "1,2", "A", "a", "1 2", "１２").forEach {
             assertThrows(IllegalArgumentException::class.java) { DTMFSequence(it) }
         }
         assertEquals(CallID("a"), Action.End(CallID("a")).callID)

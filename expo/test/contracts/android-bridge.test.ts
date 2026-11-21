@@ -171,7 +171,7 @@ test('Android mute and tones project the iOS action shapes after confirmed state
       assert.equal(action.muted, true);
       frame({ kind: 'record', record: { ...incomingCall, value: { ...incomingCall.value, muted: true } } });
     } else {
-      assert.deepEqual(action, { kind: 'tones', digits: ['1', '2', '*', '#', 'A', 'b'] });
+      assert.deepEqual(action, { kind: 'tones', digits: ['1', '2', '*', '#'] });
     }
     const receipt = { actionID: `audio-${sequence}`, origin: 'app', action: { ...action, callID } };
     frame({ kind: 'actionPerformed', receipt });
@@ -191,12 +191,13 @@ test('Android mute and tones project the iOS action shapes after confirmed state
     actionID: 'system-mute', origin: 'system', action: { kind: 'mute', muted: false, callID },
   } });
   assert.equal(calls.snapshot.conversations[0]?.isMuted, false);
-  assert.equal(await calls.playTones(id, '12*#Ab'), undefined);
+  assert.equal(await calls.playTones(id, '12*#'), undefined);
   await assert.rejects(calls.playTones(id, ''), { code: 'invalid_arguments' });
-  await assert.rejects(calls.playTones(id, '1E'), { code: 'invalid_arguments' });
+  await assert.rejects(calls.playTones(id, '1A'), { code: 'invalid_arguments' });
+  await assert.rejects(calls.playTones(id, '1b'), { code: 'invalid_arguments' });
   assert.deepEqual(receipts, [
     { type: 'actionPerformed', payload: { conversationId: id, origin: 'app', action: { kind: 'mute', muted: true } } },
     { type: 'actionPerformed', payload: { conversationId: id, origin: 'system', action: { kind: 'mute', muted: false } } },
-    { type: 'actionPerformed', payload: { conversationId: id, origin: 'app', action: { kind: 'tones', digits: '12*#Ab' } } },
+    { type: 'actionPerformed', payload: { conversationId: id, origin: 'app', action: { kind: 'tones', digits: '12*#' } } },
   ]);
 });

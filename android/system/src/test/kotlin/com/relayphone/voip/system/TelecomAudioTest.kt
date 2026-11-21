@@ -108,7 +108,7 @@ internal class TelecomAudioTest {
     fun `tones publish after the local send and a native failure produces no receipt`() = runTest {
         val (port, backend, runtime) = connected()
         val receipts = receipts(runtime)
-        val tones = Action.Tones(invitation.callID, DTMFSequence("12*#Ab"))
+        val tones = Action.Tones(invitation.callID, DTMFSequence("12*#"))
         val send = async { port.perform(tones) }
         runCurrent()
         assertEquals(tones.digits, backend.audio.sent)

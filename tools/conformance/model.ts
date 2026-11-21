@@ -48,7 +48,7 @@ export type Media = Readonly<{ owner: 'native' | 'application'; preparation: 'un
 export type Call = Readonly<{ id: WireID; remoteID?: WireID; line: Line; direction: 'incoming' | 'outgoing';
   parties: readonly [Party, ...Party[]]; lifecycle: Lifecycle; held: boolean; muted: boolean; video: boolean; media: Media }>;
 export type Invitation = Readonly<{ callID: WireID; eventID: WireID; line: Line; party: Party }>;
-export type DTMFDigit = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '*' | '#' | 'A' | 'B' | 'C' | 'D' | 'a' | 'b' | 'c' | 'd';
+export type DTMFDigit = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '*' | '#';
 export type Action = { readonly kind: 'start'; readonly callID: WireID; readonly line: Line; readonly party: Party }
   | { readonly kind: 'answer' | 'join' | 'end'; readonly callID: WireID }
   | { readonly kind: 'hold'; readonly callID: WireID; readonly held: boolean }

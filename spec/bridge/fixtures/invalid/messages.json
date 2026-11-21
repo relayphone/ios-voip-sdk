@@ -11,7 +11,7 @@
   {"kind":"negotiate","versions":[]},
   {"kind":"negotiated","result":{"ok":true,"value":{"version":2}}},
   {"kind":"command","operation":"deleteCall","input":{"id":"call-a"}},
-  {"kind":"command","operation":"perform","input":{"id":"call-a","action":{"kind":"tones","digits":["E"]}}},
+  {"kind":"command","operation":"perform","input":{"id":"call-a","action":{"kind":"tones","digits":["A"]}}},
   {"kind":"command","operation":"receive","input":{"kind":"ended","eventID":"event-a","target":{"kind":"call","id":"call-a"},"reason":{"kind":"localEnded"}}},
   {"kind":"reply","operation":"bindRemote","result":{"ok":true,"value":{"kind":"applied"}}},
   {"kind":"reply","operation":"perform","result":{"ok":false,"error":{"kind":"unknownCall","callID":"call-a","message":"No such call"}}},
