@@ -1,7 +1,16 @@
 # Android calling modules
 
-Requires JDK 17. Run `./gradlew check` from this directory (`gradlew.bat check` on Windows).
+## Checks
+
+From this directory, run `./gradlew -PjvmOnly=true check --no-daemon --console=plain`
+with JDK 17 to check the Kotlin JVM modules. If you use mise, you can get JDK 17
+for this command with `mise exec java@temurin-17 -- ./gradlew -PjvmOnly=true check --no-daemon --console=plain`.
+
+Run `./gradlew check` to include the Android system module. This also requires
+Android SDK 37.0 and Build Tools 36.0.0. On Windows, use `gradlew.bat`.
 The wrapper verifies its Gradle distribution checksum. CI also validates the wrapper JAR.
+
+## Modules
 
 - `:core` provides the v0 wire types and pure reducer. `reduce(state, input, now)`
   returns updated state and ordered effects.

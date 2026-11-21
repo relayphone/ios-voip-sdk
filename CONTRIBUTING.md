@@ -4,7 +4,17 @@ Thanks for contributing. Before starting a large change, open an issue to discus
 
 ## Setup
 
-Use macOS 26 or later with Xcode 27.1 (Swift 6.4) and the iOS 27 SDK; the SDK supports iOS 26 and later. The [example app](Examples/CallExample) builds against this checkout; open `Examples/CallExample/CallExample.xcodeproj` and run it in an iOS 27 simulator.
+Use Node.js 24 for the Expo package and TypeScript tools. From the repository root, the Expo checks on Linux are
+
+```sh
+npm ci --prefix expo --ignore-scripts --no-audit --no-fund
+npm run typecheck --prefix expo
+npm run test:linux --prefix expo
+```
+
+The [Expo workflow](.github/workflows/expo.yml) runs these checks on Ubuntu. On macOS, `npm test --prefix expo` runs the full suite, including the Ruby, CocoaPods and Xcode checks. See the [Android checks](android/README.md#checks) for running the JVM tests with JDK 17.
+
+For Swift development, use macOS 26 or later with Xcode 27.1 (Swift 6.4) and the iOS 27 SDK. The SDK supports iOS 26 and later. The [example app](Examples/CallExample) builds against this checkout. Open `Examples/CallExample/CallExample.xcodeproj` and run it in an iOS 27 simulator.
 
 ## Checks
 
