@@ -17,8 +17,11 @@ on:
       - "Sources/CKSimProtocol/**"
       - "Sources/Engine/**"
       - "Sources/Interposition/**"
+      - "spec/**"
       - "VERSION"
+      - "tools/conformance/**"
       - "tools/expo-package*"
+      - "tools/json-fields.ts"
       - ".github/actions/setup/**"
       - ".github/workflows/expo.yml"
   pull_request:
