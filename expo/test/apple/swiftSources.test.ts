@@ -5,17 +5,18 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 
-import { widgetFiles } from "../../build/withCallPreviewActivities.js";
+import { widgetFiles } from "../../plugin/build/withCallPreviewActivities.js";
 
 test("generated intents and the example Focus filter compile alongside Expo's internal imports", t => {
   const root = mkdtempSync(join(tmpdir(), "voip-swift-sources-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const packageRoot = resolve(import.meta.dirname, "../../..");
+  const packageRoot = resolve(import.meta.dirname, "../..");
   const moduleCache = join(root, "ModuleCache");
   mkdirSync(moduleCache);
   const sdk = spawnSync("xcrun", ["--sdk", "iphonesimulator", "--show-sdk-path"], {
     encoding: "utf8", timeout: 10_000,
   });
+  assert.ifError(sdk.error);
   assert.equal(sdk.status, 0, sdk.stderr);
   const platform = ["-sdk", sdk.stdout.trim(), "-target", "arm64-apple-ios26.0-simulator",
     "-module-cache-path", moduleCache];
@@ -23,6 +24,7 @@ test("generated intents and the example Focus filter compile alongside Expo's in
     const result = spawnSync("xcrun", ["swiftc", ...platform, ...args], {
       encoding: "utf8", timeout: 60_000,
     });
+    assert.ifError(result.error);
     assert.equal(result.status, 0, result.stderr);
   };
 

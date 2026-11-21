@@ -34,4 +34,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - run: ./gradlew check --no-daemon --console=plain
+      - name: Check JVM modules without an Android SDK
+        run: env -u ANDROID_HOME -u ANDROID_SDK_ROOT ./gradlew -PjvmOnly=true check --no-daemon --console=plain
+      - name: Check all modules, including the Android system adapter
+        run: ./gradlew check --no-daemon --console=plain
