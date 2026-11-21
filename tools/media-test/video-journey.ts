@@ -75,12 +75,18 @@ async function runJourney(harness: IsolatedHarness, mailbox: ReturnType<typeof p
     const phaseId = randomUUID(), downId = `${phaseId}:downlink`;
     phaseIds.push(phaseId, downId);
     const startedAtMs = performance.now();
+    // Lead the capture with one acknowledged cycle so older PCM in the pacing queue
+    // cannot consume the observation window. The phase uses a fresh marker in each direction.
+    await harness.act({ type: 'publish', markerId: downId, observePacing: true, keepQueuedAudio: true });
+    await until(`${label} queued downlink marker`, async () => {
+      const pacing = await harness.downlinkPacing();
+      assert.equal(pacing?.markerId, downId, 'Downlink marker changed before capture');
+      return pacing?.firstCycleQueued || undefined;
+    });
     await harness.act({ type: 'capture' });
     const phaseSentAtMs = performance.now();
     const phase = await request({ operation: 'beginPhase', phaseId });
     const phaseReceivedAtMs = performance.now();
-    // Arm both captures before sending the new marker on the continuously paced track.
-    await harness.act({ type: 'publish', markerId: downId, observePacing: true, keepQueuedAudio: true });
     const capture = { host: await harness.status(), native: readJourneyAudio(phase) };
     try {
       if (expectedDownlink) {
@@ -239,7 +245,9 @@ async function runJourney(harness: IsolatedHarness, mailbox: ReturnType<typeof p
   }
   keep('initial-state', { sdk: initial.sdk, audioRoute: originalRoute, videoRoute,
     startup: diagnoseNativeStartup(initial.reply.evidence) });
-  let epoch = await startVideo(enabled, initialPeer, 1);
+  let epoch = startsWithVideo
+    ? { enable: enabled, peer: initialPeer, number: 1 }
+    : await startVideo(enabled, initialPeer, 1);
   let live = await freshVideo('first-video', epoch);
   let downgradedBoundary: Parameters<typeof assessJourneyVideo>[5];
   let resumedAudioPublication: string | undefined;
@@ -402,6 +410,7 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
     'Usage: video-journey.ts <simulator|lease> <app> <result> <initial-local|app-downgrade|server-remote|hold-resume>');
   const simulator = leasedSimulator ?? requestedSimulator;
   const scenario = selection as JourneyCase;
+  const startsWithVideo = scenario === 'initial-local' || scenario === 'hold-resume';
   const report: Report = { scenario, verdict: 'failed', checkpoints: [] };
   const analyzeAudio: (() => Promise<void>)[] = [];
   const fixtureId = randomUUID(), conversationId = randomUUID() as ConversationId, clockID = randomUUID();
@@ -446,10 +455,11 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
     const initialPeer = await harness.openVideo(clockID);
     await initialPeer.observe(appParticipant, 1);
     await harness.act({ type: 'publish', markerId: randomUUID() });
+    if (startsWithVideo) await initialPeer.publish(1);
     signal.throwIfAborted();
     writeFileSync(fixtureFile, JSON.stringify({ ...harness.credentials(appParticipant), control: 'http://127.0.0.1',
       profile: 'tones-v2', uplinkFrequencies: createMarker(randomUUID()).frequencies,
-      journey: { fixtureId, conversationId, initialVideo: scenario === 'initial-local' || scenario === 'hold-resume', syntheticVideo: fixtureId },
+      journey: { fixtureId, conversationId, initialVideo: startsWithVideo, syntheticVideo: fixtureId },
     }), { mode: 0o600 });
     launchAttempted = true;
     const launched = await simctl('launch', '--terminate-running-process', simulator, bundle);

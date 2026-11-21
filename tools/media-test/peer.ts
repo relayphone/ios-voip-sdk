@@ -25,6 +25,7 @@ interface SenderPacing {
   rtp: { observedAtMs: number; streams: ReturnType<typeof senderAudioStatistics> }[];
   droppedFrames: number;
   droppedRtpRows: number;
+  firstCycleQueued: boolean;
 }
 
 /** One real far-end participant; observations remain independent of publication control. */
@@ -162,10 +163,14 @@ export class MediaPeer {
             pacing.frames.push(frame);
           } else pacing.droppedFrames++;
         }
-        const pcm = this.emission?.slice(this.cursor, this.cursor + 480) ?? new Int16Array(480);
-        this.cursor = this.emission ? (this.cursor + 480) % this.emission.length : 0;
+        const emission = this.emission;
+        const pcm = emission?.slice(this.cursor, this.cursor + 480) ?? new Int16Array(480);
+        this.cursor = emission ? (this.cursor + 480) % emission.length : 0;
         await this.source.captureFrame(new AudioFrame(pcm, 48_000, 1, 480));
-        if (frame) frame.acceptedAtMs = this.now();
+        if (frame && pacing) {
+          frame.acceptedAtMs = this.now();
+          if (frame.offsetSamples + 480 === emission?.length) pacing.firstCycleQueued = true;
+        }
       }
     })().catch(() => { this.publicationFailed = true; });
   }
@@ -232,7 +237,8 @@ export class MediaPeer {
     this.cursor = 0;
     if (!keepQueuedAudio) this.source.clearQueue();
     this.senderPacing = observePacing && this.audioPublication ? {
-      markerId, publication: this.audioPublication, startedAtMs: this.now(), frames: [], rtp: [], droppedFrames: 0, droppedRtpRows: 0,
+      markerId, publication: this.audioPublication, startedAtMs: this.now(), frames: [], rtp: [],
+      droppedFrames: 0, droppedRtpRows: 0, firstCycleQueued: false,
     } : undefined;
   }
   downlinkPacing() {

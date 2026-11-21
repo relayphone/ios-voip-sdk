@@ -200,8 +200,12 @@ test('the journey sender feeds the receiver while frame acknowledgements are blo
   try {
     await sender.connect(harness.credentials('app'));
     sender.publish('sender-stall:uplink', true);
+    assert.equal(sender.downlinkPacing()?.firstCycleQueued, false);
     const stallMs = 1_400;
-    await until(() => (sender.downlinkPacing()?.frames.at(-1)?.queuedBeforeMs ?? 0) > stallMs);
+    await until(() => {
+      const pacing = sender.downlinkPacing();
+      return pacing?.firstCycleQueued === true && (pacing.frames.at(-1)?.queuedBeforeMs ?? 0) > stallMs;
+    });
     await harness.act({ type: 'capture' });
     const baseline = await waitFor('Receiver counters before sender stall', async () =>
       (await harness.observation()).capture.transport?.at(-1));
