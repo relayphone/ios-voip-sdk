@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -180,6 +180,26 @@ test('the generic command launcher remains hosted-only with local lease configur
     });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /host speakers and microphone.*hosted GitHub Actions/);
+});
+
+test('a nested hosted command shares the compiled guard and obtains its own verdict', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'simulator-media-guard-test-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const compiler = join(directory, 'xcrun'), compilations = join(directory, 'compilations');
+  const guard = join(directory, 'guard');
+  await writeFile(guard, "#!/bin/sh\necho 'ready: no host devices'\ncat >/dev/null\necho 'clean: host audio guard completed'\n",
+    { mode: 0o700 });
+  await writeFile(compiler, '#!/bin/sh\nset -eu\nfor output do :; done\necho build >> "$GUARD_COMPILATIONS"\ncp "$GUARD_SCRIPT" "$output"\n',
+    { mode: 0o700 });
+  const entry = fileURLToPath(new URL('./simulator-media.ts', import.meta.url));
+  const result = spawnSync(process.execPath, [entry, process.execPath, entry, '/usr/bin/true'], {
+    encoding: 'utf8', timeout: 5000,
+    env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted',
+      MEDIA_AUDIO_GUARD_BINARY: '', GUARD_COMPILATIONS: compilations, GUARD_SCRIPT: guard },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(await readFile(compilations, 'utf8'), 'build\n');
+  assert.equal(result.stderr.match(/Core Audio guard passed/g)?.length, 2);
 });
 
 const localAuthorization = {

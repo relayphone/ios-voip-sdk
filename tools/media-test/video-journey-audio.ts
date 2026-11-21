@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
 import { createMarker, detectMarker } from '../../expo/src/testing/marker.ts';
 import type { MediaMarker } from '../../expo/src/testing/types.ts';
-import type { MediaHarness } from './harness.ts';
+import type { IsolatedHarness } from './harness.ts';
 import type { PCMCapture } from './marker-evidence.ts';
 import { measureMarkerAsync } from './measure-marker.ts';
 import type { NativeJourneyReply } from './native-journey.ts';
 
 export const journeyCaptureSeconds = 4;
+// A hosted capture acknowledgement stalled for 1,378 ms with simultaneous observation lag.
+export const journeyAudioQueueMs = 1_600;
+// The native hold command also allows 300 ms for pre-hold media to drain.
+export const heldAudioDrainMs = 300;
 
 type AudioStage = { pcm?: PCMCapture; sampleRate: number; retainedSamples: number; transportCount: number; lastTransportSample: number;
   observation: { installed: boolean; frameSeconds: number };
@@ -34,27 +38,34 @@ export function readJourneyAudio(reply: NativeJourneyReply): JourneyAudio {
   return audio;
 }
 
-export function hasUplinkSamples(host: ReturnType<MediaHarness['status']>) {
+type HostStatus = Awaited<ReturnType<IsolatedHarness['status']>>;
+
+export function hasUplinkSamples(host: HostStatus) {
   return host.connected && host.readerLive && host.trackAvailable && !host.publicationFailed &&
     host.receivedSamples >= 48_000 * 3;
 }
 
-export function hasDuplexSamples(audio: JourneyAudio, host: ReturnType<MediaHarness['status']>) {
+export function hasDuplexSamples(audio: JourneyAudio, host: HostStatus) {
   return audio.audioActive && hasUplinkSamples(host) && [audio.decoded, audio.output].every(s =>
       s.observation.installed && s.sampleRate > 0 && s.retainedSamples >= s.sampleRate * journeyCaptureSeconds &&
       s.transportCount >= 2 && s.lastTransportSample >= s.sampleRate * journeyCaptureSeconds);
 }
 
-export async function assertDuplexAudio(audio: JourneyAudio, harness: MediaHarness, markers: { up: MediaMarker; down: MediaMarker }) {
+export async function captureDuplexAudio(audio: JourneyAudio, harness: IsolatedHarness) {
   assert.ok(audio.decoded.pcm && audio.output.pcm, 'Missing native PCM from the requested audio snapshot');
-  const host = harness.observation();
-  const [up, decoded, output] = await Promise.all([
-    measureMarkerAsync(host.capture, markers.up, 'host-poll'),
-    measureMarkerAsync(audio.decoded.pcm, markers.down),
-    measureMarkerAsync(audio.output.pcm, markers.down),
-  ]);
-  return { markers: { up, decoded, output },
+  const host = await harness.observation();
+  return { pcm: { up: host.capture, decoded: audio.decoded.pcm, output: audio.output.pcm },
     uplinkCapture: { retainedSamples: host.capture.channels[0]?.length ?? 0, receivedSamples: host.receiver.receivedSamples } };
+}
+
+export async function measureDuplexAudio(pcm: Awaited<ReturnType<typeof captureDuplexAudio>>['pcm'],
+  markers: { up: MediaMarker; down: MediaMarker }) {
+  const [up, decoded, output] = await Promise.all([
+    measureMarkerAsync(pcm.up, markers.up, 'host-poll'),
+    measureMarkerAsync(pcm.decoded, markers.down),
+    measureMarkerAsync(pcm.output, markers.down),
+  ]);
+  return { up, decoded, output };
 }
 
 export function heldOutputReceipt(audio: JourneyAudio, beforeHoldAtMs: number, holdAtMs: number, observedAtMs: number) {
@@ -97,8 +108,8 @@ export function readAudioRoute(audio: JourneyAudio, video: boolean) {
   return audio.outputPorts;
 }
 
-export function assertLocalAudioDeparture(harness: MediaHarness, armedAtMs: number, phaseIds: readonly string[]) {
-  const { receiver, lifecycle } = harness.observation();
+export async function assertLocalAudioDeparture(harness: IsolatedHarness, armedAtMs: number, phaseIds: readonly string[]) {
+  const { receiver, lifecycle } = await harness.observation();
   const after = lifecycle.afterDisconnect;
   assert.ok(receiver.connected && lifecycle.droppedEvents === 0 && after?.identity === 'example' &&
     after.startedAtMs >= armedAtMs && after.overflowSamples === 0, 'Incomplete far-end audio departure');

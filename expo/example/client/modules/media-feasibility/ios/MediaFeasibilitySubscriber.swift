@@ -193,6 +193,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     var videoTerminating = false
     var videoHistory = MediaSDKVideoEvidence.History()
     var journeyFailure: MediaJourneyFailure?
+    private let holdMicrophone = MediaHoldMicrophoneGate()
     var publicationHeld = false
     var publicationMuted = false
     var audioEngineStoppedAtMs: Double?
@@ -271,6 +272,11 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
                 .engineAvailabilityApplied, engineRunning: AudioManager.shared.isEngineRunning)
               active = true
             case .deactivate:
+              if let callID = fixture.journey?.conversationId,
+                client?.calls.contains(where: { $0.id.rawValue == callID && $0.isOnHold }) == true
+              {
+                try await muteMicrophoneForHold()
+              }
               try AudioManager.shared.setEngineAvailability(.none)
               active = false
               if !AudioManager.shared.isEngineRunning {
@@ -363,6 +369,11 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     }
 
     deinit { packets?.cancel() }
+    private func muteMicrophoneForHold() async throws {
+      try await holdMicrophone.mute { [room] in
+        _ = try await room.localParticipant.setMicrophone(enabled: false)
+      }
+    }
     nonisolated func room(
       _ room: Room, participant: RemoteParticipant,
       didSubscribeTrack publication: RemoteTrackPublication
@@ -495,11 +506,16 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
               held ? .held : .resumed, hasVideo: call.hasVideo,
               connected: call.status == .connected, atMs: observationClock.milliseconds)
             do {
+              if held { try await muteMicrophoneForHold() }
               AudioManager.shared.mixer.outputVolume = held ? 0 : 1
               if !videoTerminating {
                 try await applyVideo(hasVideo: call.hasVideo, held: held)
               }
-              try await room.localParticipant.setMicrophone(enabled: !held && !call.isMuted)
+              if !held {
+                try await holdMicrophone.restore {
+                  _ = try await room.localParticipant.setMicrophone(enabled: !call.isMuted)
+                }
+              }
               publicationHeld = held
             } catch { fail() }
           }

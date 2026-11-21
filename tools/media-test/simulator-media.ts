@@ -51,6 +51,7 @@ function simulatorForMedia(requested: string, leased: string): string {
 
 interface AudioGuard {
   readonly signal: AbortSignal;
+  readonly binary?: string;
   track?(pid: number): void;
   prepareRelease?(): void;
   finish(): Promise<string>;
@@ -104,14 +105,21 @@ export async function readSimulatorLaunchdPID(udid: string, signal: AbortSignal,
 async function startAudioGuard(
   reportDevice: (line: string) => void, env: NodeJS.ProcessEnv, args: string[] = [],
 ): Promise<AudioGuard> {
-  const scratch = await mkdtemp(join(tmpdir(), 'host-audio-guard-'));
-  const binary = join(scratch, 'guard');
-  try {
-    await execute('xcrun', ['swiftc', '-swift-version', '6', '-warnings-as-errors', ...guardSources, '-o', binary],
-      { timeout: 60_000, killSignal: 'SIGKILL' });
-  } catch (cause) {
-    await rm(scratch, { recursive: true, force: true });
-    throw new Error('Could not build the Core Audio guard', { cause });
+  let binary = isHosted(env) ? env.MEDIA_AUDIO_GUARD_BINARY : undefined;
+  let scratch: string | undefined;
+  const cleanup = async () => {
+    if (scratch) await rm(scratch, { recursive: true, force: true });
+  };
+  if (!binary) {
+    scratch = await mkdtemp(join(tmpdir(), 'host-audio-guard-'));
+    binary = join(scratch, 'guard');
+    try {
+      await execute('xcrun', ['swiftc', '-swift-version', '6', '-warnings-as-errors', ...guardSources, '-o', binary],
+        { timeout: 60_000, killSignal: 'SIGKILL' });
+    } catch (cause) {
+      await cleanup();
+      throw new Error('Could not build the Core Audio guard', { cause });
+    }
   }
 
   const child = spawn(binary, args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -145,6 +153,7 @@ async function startAudioGuard(
   try {
     const mode = await deadline(10_000, 'Core Audio guard readiness', () => ready.promise);
     return {
+      binary,
       signal: controller.signal,
       track(pid) {
         controller.signal.throwIfAborted();
@@ -161,20 +170,20 @@ async function startAudioGuard(
           return mode;
         } finally {
           if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-          await rm(scratch, { recursive: true, force: true });
+          await cleanup();
         }
       },
     };
   } catch (error) {
     child.kill('SIGKILL');
-    await rm(scratch, { recursive: true, force: true });
+    await cleanup();
     throw error;
   }
 }
 
 /** Checks admission and holds the host audio guard from before setup through cleanup. */
 export async function withSimulatorMediaAudio<T>(
-  run: (signal: AbortSignal, simulator?: string, trackSimulatorApp?: (pid: number) => void) => Promise<T>,
+  run: (signal: AbortSignal, simulator?: string, trackSimulatorApp?: (pid: number) => void, guardBinary?: string) => Promise<T>,
   { authorization = { environment: process.env }, start = startAudioGuard, lease = withIsolatedSimulatorLease, localDestination,
     leaseReceipt }:
     { authorization?: Authorization; start?: typeof startAudioGuard; lease?: typeof withIsolatedSimulatorLease;
@@ -220,7 +229,7 @@ export async function withSimulatorMediaAudio<T>(
     if (!localLease) {
       const signal = await arm();
       signal.throwIfAborted();
-      return await run(signal);
+      return await run(signal, undefined, undefined, guard?.binary);
     }
     return await lease(localLease, interruption.signal, (proof, leaseSignal) => {
       requireSimulatorMedia({ environment, leaseAudio: proof.leaseAudio });
@@ -344,6 +353,8 @@ if (import.meta.main) {
     await withSimulatorMediaAudio(async () => {}, { localDestination: 'check-lease', leaseReceipt: args[0] ?? 'isolated-lease.json' });
   } else {
     requireSimulatorMedia();
-    await withSimulatorMediaAudio(signal => runCommand(command, args, signal));
+    // Keep the executable available to guarded children until their parent command exits.
+    await withSimulatorMediaAudio((signal, _simulator, _track, binary) =>
+      runCommand(command, args, signal, { env: { ...process.env, MEDIA_AUDIO_GUARD_BINARY: binary } }));
   }
 }

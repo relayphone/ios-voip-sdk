@@ -84,6 +84,12 @@
         state.source = nil
         state.inputClock = nil
       }
+      // The mixer observer has already routed the microphone. Use that input branch so
+      // the marker passes through the same mute gate as microphone audio.
+      let connections = engine.outputConnectionPoints(for: src, outputBus: 0)
+      guard connections.count == 1, let connection = connections.first,
+        let microphoneMixer = connection.node as? AVAudioMixerNode
+      else { return -1 }
       let emission = emission
       emission.configure(rate: rate)
       let processingTimeline = processingTimeline
@@ -108,13 +114,13 @@
       engine.attach(source)
       // AVAudioSinkNode must remain downstream of hardware input to clock capture.
       // Keep that branch connected at zero gain; only the marker contributes PCM.
-      for bus in 0..<dst.numberOfInputs { engine.disconnectNodeInput(dst, bus: bus) }
       let inputClock = AVAudioMixerNode()
       engine.attach(inputClock)
       engine.disconnectNodeOutput(src)
       engine.connect(src, to: inputClock, format: format)
-      engine.connect(inputClock, to: dst, fromBus: 0, toBus: 0, format: format)
-      engine.connect(source, to: dst, fromBus: 0, toBus: 1, format: format)
+      engine.connect(
+        inputClock, to: microphoneMixer, fromBus: 0, toBus: connection.bus, format: format)
+      engine.connect(source, to: microphoneMixer, format: format)
       inputClock.outputVolume = 0
       graph.withLock {
         $0.source = source

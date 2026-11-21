@@ -17,12 +17,14 @@ export class VideoPeer {
   private failureReported = false;
   private arm?: { participant: string; epoch: number }; private closed = false;
   readonly sourceClockID: string;
+  private readonly now: () => number;
   private readonly room: Room; readonly fixture: string;
-  constructor(room: Room, fixture: string, clockID: string) {
+  constructor(room: Room, fixture: string, clockID: string, now = () => performance.now()) {
     this.room = room; this.fixture = fixture;
     videoIdentity({ fixture, direction: 1, epoch: 0, counter: 0, sourceTimeUs: 0 });
     if (!clockID) throw Error('Missing source clock');
     this.sourceClockID = clockID;
+    this.now = now;
     this.room.on(RoomEvent.TrackSubscribed, this.subscribed);
     this.room.on(RoomEvent.TrackUnpublished, this.unpublished);
     this.room.on(RoomEvent.TrackMuted, this.muted);
@@ -43,7 +45,7 @@ export class VideoPeer {
     if (track.kind !== TrackKind.KIND_VIDEO || !this.arm || participant.identity !== this.arm.participant || this.failed) return;
     if (!publication.sid || this.observer || publication.source !== TrackSource.SOURCE_CAMERA) { this.failed = true; this.observer?.record('failed'); return; }
     this.observer = new VideoObservation({ fixture: this.fixture, direction: 0, epoch: this.arm!.epoch,
-      participant: participant.identity, publication: publication.sid }, () => performance.now(), this.sourceClockID);
+      participant: participant.identity, publication: publication.sid }, this.now, this.sourceClockID);
     const reader = new VideoStream(track).getReader(); this.reader = reader;
     this.reading = (async () => {
       try {
@@ -95,11 +97,11 @@ export class VideoPeer {
     } catch { this.failed = true; this.freeze(); throw Error('Video publication incomplete'); }
     this.abort = new AbortController(); this.joined = false;
     this.pumping = (async () => {
-      let next = performance.now();
+      let next = this.now();
       while (!this.abort!.signal.aborted) {
-        while (next + 100 <= performance.now()) { this.counter++; this.skipped++; next += 100; }
-        this.capture(); next = Math.max(next + 100, performance.now() + 100);
-        try { await delay(Math.max(0, next - performance.now()), undefined, { signal: this.abort!.signal }); }
+        while (next + 100 <= this.now()) { this.counter++; this.skipped++; next += 100; }
+        this.capture(); next = Math.max(next + 100, this.now() + 100);
+        try { await delay(Math.max(0, next - this.now()), undefined, { signal: this.abort!.signal }); }
         catch (error) { if (!this.abort!.signal.aborted) throw error; }
       }
     })().catch(() => { this.failed = true; this.observer?.record('failed'); }).finally(() => { this.joined = true; });
@@ -107,7 +109,7 @@ export class VideoPeer {
   private capture() {
     if (!this.source || this.stoppedAtUs !== undefined) { this.rejected++; throw Error('Video source stopped'); }
     if (this.generated.length >= 4096 || this.counter > 0xffffffff) throw Error('Video source overflow');
-    const marker: VideoMarker = { fixture: this.fixture, direction: 1, epoch: this.epoch, counter: this.counter++, sourceTimeUs: Math.floor(performance.now() * 1000) };
+    const marker: VideoMarker = { fixture: this.fixture, direction: 1, epoch: this.epoch, counter: this.counter++, sourceTimeUs: Math.floor(this.now() * 1000) };
     const data = new Uint8Array(160 * 120 * 3 / 2).fill(128); data.set(videoLuma(marker)); this.generated.push(marker);
     try { this.source.captureFrame(new VideoFrame(data, 160, 120, VideoBufferType.I420), BigInt(marker.sourceTimeUs)); }
     catch (error) { this.rejectedSubmissions++; throw error; }
@@ -123,7 +125,7 @@ export class VideoPeer {
     await this.unpublish(); this.held = true;
   }
   /** Retire generation synchronously before dispatching a terminal SDK action. */
-  freeze() { this.stoppedAtUs ??= Math.floor(performance.now() * 1000); this.abort?.abort(); }
+  freeze() { this.stoppedAtUs ??= Math.floor(this.now() * 1000); this.abort?.abort(); }
   private async retire() {
     this.freeze(); await this.pumping;
     if (this.publishing) await deadline(3000, 'Pending video publication', () => this.publishing!);

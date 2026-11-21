@@ -8,6 +8,7 @@ import { HOST_RECEIVER_STATS_POLL_MS, type TransportSnapshot } from './transport
 import { deadline } from './fixture-runtime.ts';
 import { PeerLifecycle } from './peer-lifecycle.ts';
 import { PeerReconnect } from './peer-reconnect.ts';
+import type { HarnessAction } from './harness.ts';
 
 interface SenderFrame {
   offsetSamples: number;
@@ -24,6 +25,7 @@ interface SenderPacing {
   rtp: { observedAtMs: number; streams: ReturnType<typeof senderAudioStatistics> }[];
   droppedFrames: number;
   droppedRtpRows: number;
+  firstCycleQueued: boolean;
 }
 
 /** One real far-end participant; observations remain independent of publication control. */
@@ -31,7 +33,7 @@ export class MediaPeer {
   private room = new Room();
   private videoPeer?: VideoPeer;
   private videoOpening = false;
-  private source = new AudioSource(48_000, 1, 100);
+  private readonly source: AudioSource;
   private audioPublication?: string;
   private running = true;
   private emission: Int16Array | undefined;
@@ -56,11 +58,17 @@ export class MediaPeer {
   private statistics: Promise<void> | undefined;
   private readonly readStatistics: typeof receiverStatistics;
   private readonly captureLimitSamples: number;
-  private readonly lifecycle = new PeerLifecycle();
+  private readonly lifecycle: PeerLifecycle;
+  private readonly now: () => number;
+  private retiringAudioPublication?: string;
 
-  constructor(readStatistics: typeof receiverStatistics = receiverStatistics, captureSeconds: 3 | 4 = 3) {
+  constructor(readStatistics: typeof receiverStatistics = receiverStatistics, captureSeconds: 3 | 4 = 3,
+    audioQueueMs = 100, now = () => performance.now()) {
+    this.source = new AudioSource(48_000, 1, audioQueueMs);
     this.readStatistics = readStatistics;
     this.captureLimitSamples = captureSeconds * 48_000;
+    this.lifecycle = new PeerLifecycle(now);
+    this.now = now;
     this.reconnectControl = new PeerReconnect({
       available: () => this.running && this.status().connected,
       publications: () => [...this.room.localParticipant!.trackPublications.values()]
@@ -134,7 +142,7 @@ export class MediaPeer {
             if (pacing !== this.senderPacing) return;
             // A room stats report can contain the retired and replacement RTP streams.
             // Keep them separate so the receipt can show which stream advanced.
-            if (pacing.rtp.length < 128) pacing.rtp.push({ observedAtMs: performance.now(), streams: senderAudioStatistics(stats) });
+            if (pacing.rtp.length < 128) pacing.rtp.push({ observedAtMs: this.now(), streams: senderAudioStatistics(stats) });
             else pacing.droppedRtpRows++;
           }));
           const previous = this.transport.at(-1);
@@ -151,14 +159,18 @@ export class MediaPeer {
         let frame: SenderFrame | undefined;
         if (pacing) {
           if (pacing.frames.length < 1200) {
-            frame = { offsetSamples: this.cursor, submittedAtMs: performance.now(), queuedBeforeMs: this.source.queuedDuration };
+            frame = { offsetSamples: this.cursor, submittedAtMs: this.now(), queuedBeforeMs: this.source.queuedDuration };
             pacing.frames.push(frame);
           } else pacing.droppedFrames++;
         }
-        const pcm = this.emission?.slice(this.cursor, this.cursor + 480) ?? new Int16Array(480);
-        this.cursor = this.emission ? (this.cursor + 480) % this.emission.length : 0;
+        const emission = this.emission;
+        const pcm = emission?.slice(this.cursor, this.cursor + 480) ?? new Int16Array(480);
+        this.cursor = emission ? (this.cursor + 480) % emission.length : 0;
         await this.source.captureFrame(new AudioFrame(pcm, 48_000, 1, 480));
-        if (frame) frame.acceptedAtMs = performance.now();
+        if (frame && pacing) {
+          frame.acceptedAtMs = this.now();
+          if (frame.offsetSamples + 480 === emission?.length) pacing.firstCycleQueued = true;
+        }
       }
     })().catch(() => { this.publicationFailed = true; });
   }
@@ -166,6 +178,16 @@ export class MediaPeer {
   reconnect(): Promise<void> { return this.reconnectControl.run(); }
   /** Incomplete attempts survive errors; recovery still requires a fresh marker gate. */
   reconnectEvidence() { return this.reconnectControl.evidence(); }
+
+  async act(action: HarnessAction): Promise<void> {
+    switch (action.type) {
+      case 'publish': this.publish(action.markerId, action.observePacing, action.keepQueuedAudio); break;
+      case 'hold': this.hold(); break;
+      case 'capture': this.beginCapture(); break;
+      case 'leave': await this.close(); break;
+      case 'reconnect': await this.reconnect(); break;
+    }
+  }
 
   private async publishAudio() {
     const participant = this.room.localParticipant;
@@ -182,33 +204,46 @@ export class MediaPeer {
 
   /** Start a new receiver stream in the same Room while keeping the paced audio source. */
   async renewAudioPublication(observeRetired: (retired: string) => Promise<void>) {
+    const retired = await this.retireAudioPublication();
+    await observeRetired(retired);
+    return this.replaceAudioPublication(retired);
+  }
+
+  async retireAudioPublication() {
     const participant = this.room.localParticipant;
     const audio = [...(participant?.trackPublications.values() ?? [])]
       .filter(publication => publication.track instanceof LocalAudioTrack);
     const [previous] = audio;
-    if (!this.running || !participant || audio.length !== 1 || !previous?.sid ||
+    if (!this.running || this.retiringAudioPublication || !participant || audio.length !== 1 || !previous?.sid ||
       !(previous.track instanceof LocalAudioTrack)) throw Error('Peer audio publication is unavailable');
     const { sid: retired, track } = previous;
+    this.retiringAudioPublication = retired;
     await participant.unpublishTrack(retired, false);
     await track.close(false);
-    await observeRetired(retired);
-    if (!this.running) throw Error('Peer is closed');
+    return retired;
+  }
+
+  async replaceAudioPublication(retired: string) {
+    if (!this.running || this.retiringAudioPublication !== retired) throw Error('Peer audio publication was not retired');
     const publication = await this.publishAudio();
     if (publication === retired) throw Error('Peer reused the retired audio publication');
+    this.retiringAudioPublication = undefined;
     return { retired, publication };
   }
 
-  publish(markerId: string, observePacing = false): void {
+  publish(markerId: string, observePacing = false, keepQueuedAudio = false): void {
     if (!this.status().connected || this.publicationFailed) throw Error('Peer is unavailable');
     this.emission = Int16Array.from(emissionSamples(createMarker(markerId), 48_000, 48_000 / 50 * 51), value => Math.round(value * 32767));
-    this.cursor = 0; this.source.clearQueue();
+    this.cursor = 0;
+    if (!keepQueuedAudio) this.source.clearQueue();
     this.senderPacing = observePacing && this.audioPublication ? {
-      markerId, publication: this.audioPublication, startedAtMs: performance.now(), frames: [], rtp: [], droppedFrames: 0, droppedRtpRows: 0,
+      markerId, publication: this.audioPublication, startedAtMs: this.now(), frames: [], rtp: [],
+      droppedFrames: 0, droppedRtpRows: 0, firstCycleQueued: false,
     } : undefined;
   }
   downlinkPacing() {
     const pacing = this.senderPacing;
-    return pacing && { ...pacing, observedAtMs: performance.now(), sampleRate: 48_000, frameSamples: 480,
+    return pacing && { ...pacing, observedAtMs: this.now(), sampleRate: 48_000, frameSamples: 480,
       frames: pacing.frames.map(frame => ({ ...frame })), rtp: pacing.rtp.slice() };
   }
   hold(): void { if (!this.running) throw Error('Peer is closed'); this.emission = undefined; this.senderPacing = undefined; this.cursor = 0; this.source.clearQueue(); }
@@ -216,6 +251,9 @@ export class MediaPeer {
   capture(): PCMCapture { return { sampleRate: 48_000, channels: [this.received.slice()], formatChanged: false, transport: this.transport.slice() }; }
   /** Survives beginCapture(), so resetting a phase cannot erase teardown evidence. */
   lifecycleObservation() { return this.lifecycle.snapshot(); }
+  audioGate(identity: string, trackSid: string, afterMs: number) {
+    return this.lifecycle.audioGate(identity, trackSid, afterMs);
+  }
   status() {
     return { connected: this.room.connectionState === ConnectionState.CONN_CONNECTED,
       readerLive: this.readerLive && !this.readerFailed, trackAvailable: this.trackAvailable,
@@ -229,7 +267,7 @@ export class MediaPeer {
     try {
       await this.videoPeer?.close();
       if (!this.running || !this.status().connected) throw Error('Video peer retired');
-      return this.videoPeer = new VideoPeer(this.room, fixture, clockID);
+      return this.videoPeer = new VideoPeer(this.room, fixture, clockID, this.now);
     } finally { this.videoOpening = false; }
   }
   close(): Promise<void> {
