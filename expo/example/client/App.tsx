@@ -10,7 +10,7 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { Journeys } from "./journeys/Journeys";
 
 // Attach before React mounts. The example accepts local signaling without a media server.
-if (Platform.OS === "ios") setConversationHandler({ join() {}, start() {} });
+if (Platform.OS === "ios" || Platform.OS === "android") setConversationHandler({ join() {}, start() {} });
 
 export default function App() {
   const calls = useConversations();

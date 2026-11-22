@@ -28,7 +28,7 @@ public sealed interface CallError {
 @Serializable
 public enum class Feature {
     @SerialName("hold") HOLD, @SerialName("video") VIDEO, @SerialName("tones") TONES,
-    @SerialName("preview") PREVIEW, @SerialName("merge") MERGE,
+    @SerialName("preview") PREVIEW, @SerialName("merge") MERGE, @SerialName("mute") MUTE,
 }
 /** Permission required for capture. */
 @Serializable

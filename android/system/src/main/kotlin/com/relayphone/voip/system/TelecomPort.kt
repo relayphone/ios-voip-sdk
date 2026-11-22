@@ -276,8 +276,11 @@ internal class TelecomPort<NativeID : Any>(
             return
         }
         val control = session.ready.await() ?: return
-        val result = nativeResult(SystemOperation.ACTION) { control.setHeld(false) }
-        if (result is Outcome.Failure) sessionLost(session.id, CallError.SystemFailed(result.error))
+        session.controlLock.withLock {
+            if (session.held || session.closed || session.disconnectOrigin != null) return
+            val result = requestHold(session, control, false)
+            if (result is Outcome.Failure) sessionLost(session.id, result.error)
+        }
     }
 
     override suspend fun apply(request: Effect.Apply): Outcome<Unit, CallError> = when (val action = request.action) {
@@ -288,15 +291,26 @@ internal class TelecomPort<NativeID : Any>(
 
     private suspend fun applyHold(action: Action.Hold, id: ActionID): Outcome<Unit, CallError> {
         val session = sessions.find(action.callID) ?: return Outcome.Failure(CallError.UnknownCall(action.callID))
-        if (session.systemHold == id) {
+        if (id in session.systemHolds) {
             session.held = action.held
             return Outcome.Success(Unit)
         }
         val control = session.ready.await() ?: return Outcome.Failure(CallError.BridgeUnavailable)
-        session.requestedHold = action.held
+        return session.controlLock.withLock {
+            when {
+                session.closed || session.disconnectOrigin != null -> Outcome.Failure(CallError.BridgeUnavailable)
+                action.held == session.held -> Outcome.Success(Unit)
+                else -> requestHold(session, control, action.held)
+            }
+        }
+    }
+
+    private suspend fun requestHold(session: Session<NativeID>, control: TelecomControl<NativeID>, held: Boolean):
+        Outcome<Unit, CallError> {
+        session.requestedHold = held
         return try {
-            nativeResult(SystemOperation.ACTION) { control.setHeld(action.held) }.asAction().also {
-                if (it is Outcome.Success) session.held = action.held
+            nativeResult(SystemOperation.ACTION) { control.setHeld(held) }.asAction().also {
+                if (it is Outcome.Success) session.held = held
             }
         } finally {
             session.requestedHold = null
@@ -306,11 +320,11 @@ internal class TelecomPort<NativeID : Any>(
     private suspend fun systemHold(session: Session<NativeID>, held: Boolean) {
         if (session.closed || held == session.held || held == session.requestedHold) return
         val key = key(session.id)
-        session.systemHold = key.actionID
+        session.systemHolds.add(key.actionID)
         try {
             request(Action.Hold(session.id, held), key, supported = true).requireAccepted()
         } finally {
-            session.systemHold = null
+            session.systemHolds.remove(key.actionID)
         }
     }
 
@@ -389,7 +403,7 @@ private class Session<NativeID : Any>(val id: CallID, val scope: CoroutineScope)
     var answer: Answer? = null
     @Volatile var held = false
     @Volatile var requestedHold: Boolean? = null
-    @Volatile var systemHold: ActionID? = null
+    val systemHolds: MutableSet<ActionID> = ConcurrentHashMap.newKeySet()
 
     fun beginDisconnect(origin: Origin): Boolean = synchronized(this) {
         if (closed || disconnectOrigin != null) return false

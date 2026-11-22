@@ -14,7 +14,7 @@ export type SystemFailure<Kind = 'admission' | 'start' | 'action' | 'removal' | 
 export type CallError =
   | { readonly kind: 'unknownCall'; readonly callID: WireID }
   | { readonly kind: 'invalidTransition'; readonly state: State }
-  | { readonly kind: 'unsupported'; readonly feature: 'hold' | 'video' | 'tones' | 'preview' | 'merge' }
+  | { readonly kind: 'unsupported'; readonly feature: 'hold' | 'video' | 'tones' | 'preview' | 'merge' | 'mute' }
   | { readonly kind: 'permissionRequired'; readonly permission: 'microphone' | 'camera' }
   | { readonly kind: 'refused'; readonly reason: Refusal }
   | { readonly kind: 'authorityUnavailable'; readonly cause: 'credentialsUnavailable' | 'network' | 'invalidResponse' }
